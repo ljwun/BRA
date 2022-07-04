@@ -1,3 +1,6 @@
 [submodule "third_party/YOLOX"]
 	path = third_party/YOLOX
 	url = https://github.com/Megvii-BaseDetection/YOLOX
+[submodule "third_party/ByteTrack"]
+	path = third_party/ByteTrack
+	url = https://github.com/YyuK-Liao/ByteTrack

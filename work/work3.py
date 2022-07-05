@@ -80,47 +80,7 @@ def main(viname, confPath, voname):
             # [wash-hand filter]
             notWashIds, wrongWashIds, correctWashIds = alcoholFilter.work(online_persons)
             # [wash-hand visualization]
-            record.iloc[:]['deathCounter'] += 1
-            record = record.loc[record['deathCounter'] < life]
-            for i in correctWashIds: record.loc[i] = [1, 0]
-            for i in wrongWashIds: record.loc[i] = [2, 0]
-            for i in notWashIds: record.loc[i] = [3, 0]
-            for target in online_persons:
-                tID = target.track_id
-                if tID not in record.index:
-                    continue
-                tType = record.loc[tID, 'type']
-                record.loc[tID, 'deathCounter'] = 0
-                xmin, ymin, w, h = target.tlwh
-                box = tuple(map(int, (xmin, ymin, xmin+w, ymin+h)))
-                if tType == 1:
-                    color = (255, 255, 255)
-                    text = 'OK'
-                elif tType == 2:
-                    color = (176, 21, 61)
-                    text = 'wrong'
-                elif tType == 3:
-                    color = (82, 4, 28)
-                    text = 'bad'
-                cv2.rectangle(frame, box[0:2], box[2:4], color=color, thickness=5)
-                cv2.putText(frame, f'{text}|{tID}|{w/h:.3f}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 5, color, thickness=3)
-            
-            for target in online_persons:
-                tID = target.track_id
-                tracer = alcoholFilter.record
-                if tID not in tracer.index:
-                    continue
-                xmin, ymin, w, h = target.tlwh
-                box = tuple(map(int, (xmin, ymin, xmin+w, ymin+h)))
-                # 處理出廁所
-                if np.isnan(tracer.loc[tID, 'targetCounter']):
-                    color = (0, 255, 255)
-                    text = f"dirty={tracer.loc[tID, 'nonTargetCounter']}"
-                else:
-                    color = (255, 153, 255)
-                    text = f"clean={tracer.loc[tID, 'targetCounter']}"
-                cv2.rectangle(frame, box[0:2], box[2:4], color=color, thickness=3)
-                cv2.putText(frame, f'{tID}|{text}|{w/h:.3f}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 3, color, thickness=3)
+            alcoholFilter.visualize(frame, online_persons)
             
             # [social distance and visualization]
             total_distance, total_edge_num = 0, 0

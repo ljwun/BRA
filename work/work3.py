@@ -17,6 +17,7 @@ from mask.checker import MaskChecker
 from detect import Detector
 from tracker.byte_tracker import BYTETracker
 from distance.mapping import Mapper
+from distance.visual import WarningLine
 from scipy.spatial.distance import cdist
 from wash_hand.alcohol import TargetFilter
 
@@ -65,6 +66,7 @@ def main(viname, confPath, voname):
             if not ret:
                 break
             frame_id += 1
+            print(frame_id/25)
             if frame_id > frame_bound:
                 break
             # [detection]
@@ -83,32 +85,16 @@ def main(viname, confPath, voname):
             alcoholFilter.visualize(frame, online_persons)
             
             # [social distance and visualization]
-            total_distance, total_edge_num = 0, 0
-            if len(online_persons) > 0:
-                bottom_center_points = np.asarray([(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in online_persons])
-                IPM_points = mapper.points_warp(bottom_center_points)
-                distance = cdist(IPM_points, IPM_points, 'euclidean')
-                # distance is a diagonal zero symmetric matrix
-                # following formula is : sum(distance matrix) / 2 / C(points count, 2)
-                # equal to : sum(distance matrix) / P(points count, 2)
-                total_distance = distance.sum()
-                total_edge_num = IPM_points.shape[0] * (IPM_points.shape[0]-1)
-                
-                # [distance edge visualization]
-                danger_idx = undirectedFilter(distance, 0, 150.0, True)
-                warning_idx = undirectedFilter(distance, 150.0, 250.0)
-                for point in bottom_center_points:
-                    cv2.circle(frame, (np.int32(point[0]), np.int32(point[1])), 6, (0, 255, 0), -1, 8, 0)
-                for edge in warning_idx:
-                    cv2.line(frame,
-                            np.int32(bottom_center_points[edge[0]]),
-                            np.int32(bottom_center_points[edge[1]]),
-                            (0, 133, 242), 3)
-                for edge in danger_idx:
-                    cv2.line(frame,
-                            np.int32(bottom_center_points[edge[0]]),
-                            np.int32(bottom_center_points[edge[1]]),
-                            (0, 0, 255), 6)
+            bottom_center_points = np.asarray([(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in online_persons])
+            for point in bottom_center_points:
+                cv2.circle(frame, (np.int32(point[0]), np.int32(point[1])), 6, (0, 255, 0), -1, 8, 0)
+            IPM_points = mapper.points_warp(bottom_center_points)
+            distance = cdist(IPM_points, IPM_points, 'euclidean')
+            total_distance = distance.sum() / 2
+            total_edge_num = IPM_points.shape[0] * (IPM_points.shape[0]-1) / 2
+            # [distance edge visualization]
+            WarningLine(frame, bottom_center_points, distance, (0, 0, 255), 6, 0, 150.0, True)
+            WarningLine(frame, bottom_center_points, distance, (0, 133, 242), 2, 150.0, 250.0)
 
             # [mask worm ratio and visualization]
             with_mask, without_mask = [], []
@@ -186,30 +172,6 @@ def main(viname, confPath, voname):
         vid_writer.release()
         cap.release()
 
-def get_color(idx):
-    idx = idx * 3
-    color = ((37 * idx) % 255, (17 * idx) % 255, (29 * idx) % 255)
-    return color
-
-def undirectedFilter(distance, r0:float, r1:float, equal:bool=False):
-    rd_half = (r1 - r0) / 2.0
-    filtered = np.where(abs(distance-r0-rd_half) < rd_half) if not equal else np.where(abs(distance-r0-rd_half) <= rd_half)
-    formated = []
-    for i in range(filtered[0].shape[0]):
-        if filtered[1][i] != filtered[0][i] and\
-            (filtered[1][i], filtered[0][i]) not in formated:
-            formated.append((filtered[0][i], filtered[1][i]))
-    return formated 
-
-_COLORS = np.array(
-    [
-        0.000, 0.447, 0.741,
-        0.850, 0.325, 0.098,
-        0.929, 0.694, 0.125,
-        0.494, 0.184, 0.556,
-        0.466, 0.674, 0.188,
-    ]
-).astype(np.float32).reshape(-1, 3)
 
 
 if __name__ == "__main__":

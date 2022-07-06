@@ -4,7 +4,7 @@ from numpy import isnan
 import cv2
 
 class TargetFilter:
-    def __init__(self, configPath):
+    def __init__(self, configPath, record_life=50):
         configStream = open(configPath, 'r')
         self.config = yaml.safe_load(configStream)
         configStream.close()
@@ -21,7 +21,7 @@ class TargetFilter:
         self.targetThreshold = self.config['Threshold']['clean']
         self.nonTargetThreshold = self.config['Threshold']['dirty']
         self.waitingThreshold = self.config['Threshold']['waiting']
-        self.dyn_life = 50
+        self.dyn_life = record_life
 
     def work(self, inputs):
         # inputs are list of object data with its properties

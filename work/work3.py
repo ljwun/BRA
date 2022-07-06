@@ -12,7 +12,7 @@ sys.path.append(__proot__)
 sys.path.append(osp.join(__proot__,  "third_party", "YOLOX"))
 sys.path.append(osp.join(__proot__, "third_party", "ByteTrack", "yolox"))
 
-from compute_block import ACBlock
+import compute_block as cmb
 from mask.checker import MaskChecker
 from detect import Detector
 from tracker.byte_tracker import BYTETracker
@@ -52,10 +52,10 @@ def main(viname, confPath, voname):
     alcoholFilter = TargetFilter(confPath)
     record = pd.DataFrame(columns=['type', 'deathCounter'])
 
-    mask_metrics = ACBlock(fps*60*10, fps*5)
-    distance_metrics = ACBlock(fps*60*10, fps*5)
-    hand_wash_metrics = ACBlock(fps*60*10, fps*5)
-    wash_correct_metrics = ACBlock(fps*60*10, fps*5)
+    mask_metrics = cmb.ACBlock(fps*60*10, fps*5)
+    distance_metrics = cmb.ACBlock(fps*60*10, fps*5)
+    hand_wash_metrics = cmb.ACBlock(fps*60*10, fps*5)
+    wash_correct_metrics = cmb.ACBlock(fps*60*10, fps*5)
 
     frame_id = 0
     frame_bound = fps * 60 * 12
@@ -115,20 +115,11 @@ def main(viname, confPath, voname):
                 f'Average Distance: {avg_distance / 100:.2f} m',
                 f'Mask Check: {with_mask_ratio * 100:.2f}%',
             ]
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            txt_sizes = np.asarray([cv2.getTextSize(text, font, 2, 2)[0] for text in texts])
-            txt_color = (0 ,0 ,0)
-            txt_bk_color = (255, 255, 255)
-            cv2.rectangle(
-                frame, (0, 0), 
-                (txt_sizes[:, 0].max()+1, int(1.5*txt_sizes[:, 1].sum())),
-                color=txt_bk_color, thickness=-1
-            )
-            for i, text in enumerate(texts):
-                cv2.putText(
-                    frame, text,
-                    (0, int(i *1.5*txt_sizes[:, 1].max() + 1.25*txt_sizes[i][1])),
-                    font, 2, txt_color, thickness=3
+            end_position = cmb.VISBlockText(
+                frame,
+                texts, (0, 0),
+                ratio=1, thickness=3,
+                fg_color=(0 ,0 ,0), bg_color=(255, 255, 255)
             )
 
             # [period-time assessment visualization]
@@ -146,21 +137,14 @@ def main(viname, confPath, voname):
                 f'      Washed Ratio: {washed_avg * 100:.2f}%',
                 f'      Correct Ratio: {wash_correct_avg * 100:.2f}%'
             ]
-            PTA_txt_sizes = np.asarray([cv2.getTextSize(text, font, 2, 2)[0] for text in PTA_texts])
-            PTA_xmin, PTA_ymin = 0, int(1.5*txt_sizes[:, 1].sum())+1
-            PTA_w, PTA_h = PTA_txt_sizes[:, 0].max()+1, int(1.5*PTA_txt_sizes[:, 1].sum())+1
-            cv2.rectangle(
-                frame, 
-                (PTA_xmin, PTA_ymin),
-                (PTA_xmin+PTA_w, PTA_ymin+PTA_h),
-                color=txt_color, thickness=-1
+            end_position = cmb.VISBlockText(
+                frame,
+                PTA_texts, (0, 0),
+                ratio=1, thickness=3,
+                fg_color=(255, 255, 255), bg_color=(0 ,0 ,0),
+                point_reverse=(True,False)
             )
-            for i, text in enumerate(PTA_texts):
-                cv2.putText(
-                    frame, text,
-                    (0, PTA_ymin + int(i *1.5*PTA_txt_sizes[:, 1].max() + 1.25*PTA_txt_sizes[i][1])),
-                    font, 2, txt_bk_color, thickness=3
-            )
+            
             # [video]
             vid_writer.write(frame)
             

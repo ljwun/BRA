@@ -11,7 +11,7 @@ class ACBlock:
         self.output_buffer = 0.0
         self.counter = 1
 
-    def step(self,numerator, denominator):
+    def step(self, numerator, denominator):
         self.zero_buffer['numerator'] += numerator
         self.zero_buffer['denominator'] += denominator
 

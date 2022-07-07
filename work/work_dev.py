@@ -84,12 +84,12 @@ if __name__ == "__main__":
     if args.output_scale is not None:
         try:
             if re.match(
-                "(^[1-9][0-9]*|-1):(^[1-9][0-9]*|-1)",
+                "^([1-9]\d*|-1):([1-9]\d*|-1)$",
                 args.output_scale
             ) is None:
                 raise
             size = args.output_scale.split(':')
-            if size[0] == size[1] == '-1':
+            if size[0] == size[1] == '{-1}':
                 raise
             stored_size = (int(size[0]), int(size[1]))
             if stored_size[0] == -1:

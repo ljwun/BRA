@@ -8,7 +8,7 @@ from matplotlib.backend_bases import MouseButton
 import re
 
 def make_parser():
-    parser = argparse.ArgumentParser("pre/re-configure DRA system")
+    parser = argparse.ArgumentParser("pre/re-configure BRA system")
     parser.add_argument("-n", "--name", type=str, default=None, help="configure file name")
     parser.add_argument("-t", "--target", type=str, default=None, help="configure target scene(image file location)")
     action = parser.add_mutually_exclusive_group()
@@ -94,11 +94,11 @@ if __name__ == "__main__":
     print(
         """
 ______________________________________________________________________________
-       ___    ____    ____         __   ___   ____   _____  ____   ____ 
-      |   \  |    \  /    |       /  ] /   \ |    \ |     ||    | /    |
-      |    \ |  D  )|  o  |      /  / |     ||  _  ||   __| |  | |   __|
-______|  D  ||    /_|     |_____/  /__|  O  ||  |  ||  |____|  |_|  |__|______
-      |     ||    \ |  _  |    /   \_ |     ||  |  ||   _]  |  | |  |_ |
+       ____   ____    ____         __   ___   ____   _____  ____   ____ 
+      |    \ |    \  /    |       /  ] /   \ |    \ |     ||    | /    |
+      |  o  )|  D  )|  o  |      /  / |     ||  _  ||   __| |  | |   __|
+______|     ||    /_|     |_____/  /__|  O  ||  |  ||  |____|  |_|  |__|______
+      |  O  ||    \ |  _  |    /   \_ |     ||  |  ||   _]  |  | |  |_ |
       |     ||  .  \|  |  |    \     ||     ||  |  ||  |    |  | |     |
       |_____||__|\_||__|__|     \____| \___/ |__|__||__|   |____||___,_|
 ______________________________________________________________________________

@@ -2,6 +2,9 @@ import os.path as osp
 import sys
 import cv2
 import argparse
+import numpy as np
+import subprocess
+import time
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
@@ -60,6 +63,7 @@ if __name__ == "__main__":
         "min_box_area":10.0,
         "mot20":False,
     }
+
     worker = Worker3(
         args.video_input,
         args.config, track_parameter
@@ -78,11 +82,47 @@ if __name__ == "__main__":
             )
         )
     
+    if args.stream_output is None:
+        ffmpeg_process = None
+    else:
+        round_times = np.zeros(11)
+        frame_buffer = []
+        worker_iter = iter(worker)
+        for i in range(11):
+            t0 = time.time()
+            fid, frame = next(worker_iter)
+            round_times[i] = time.time() - t0
+            frame_buffer.append((fid, frame))
+        stream_fps = 1.0 / round_times[1:].mean()
+        command = ['ffmpeg',
+            '-y', '-an',
+            '-f', 'rawvideo',
+            '-vcodec','rawvideo',
+            '-pix_fmt', 'bgr24',
+            '-s', f'{frame_buffer[0][1].shape[1]}x{frame_buffer[0][1].shape[0]}',
+            '-r', f'{stream_fps}',
+            '-i', '-',
+            '-vcodec', 'h264',
+            '-f', 'flv',
+            args.stream_output
+        ]
+        ffmpeg_process = subprocess.Popen(
+            command, shell=False, 
+            stdin=subprocess.PIPE
+        )
+        print(f'FPS : {stream_fps}')
+        for fid, frame in frame_buffer:
+            print(f"Now is => [ {fid / worker.fps} ]", end='\r')
+            ffmpeg_process.stdin.write(frame.data.tobytes())
+        print('\nstart working!!!')
+    
     try:
         for fid, frame in worker:
             print(f"Now is => [ {fid / worker.fps} ]", end='\r')
             if vwriter is not None:
                 vwriter.write(frame)
+            if ffmpeg_process is not None:
+                ffmpeg_process.stdin.write(frame.data.tobytes())
             if args.frame_limit > 1 and fid >= args.frame_limit:
                 break
         print('\n')

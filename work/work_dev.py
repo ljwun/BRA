@@ -5,6 +5,7 @@ import argparse
 import numpy as np
 import subprocess
 import time
+import re
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
@@ -35,6 +36,11 @@ def make_parser():
         "-so", "--stream_output",
         type=str, default=None,
         help="media server location for pushing stream with ffmpeg"
+    )
+    parser.add_argument(
+        "-s", "--output_scale",
+        type=str, default=None,
+        help="scaling of output stream and stored file"
     )
     parser.add_argument(
         "--track_thresh",
@@ -69,6 +75,40 @@ if __name__ == "__main__":
         args.config, track_parameter
     )
 
+    source_size = (
+        int(worker.cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+        int(worker.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    )
+    print(f'source_size : {source_size}')
+    stored_size = source_size
+    if args.output_scale is not None:
+        try:
+            if re.match(
+                "(^[1-9][0-9]*|-1):(^[1-9][0-9]*|-1)",
+                args.output_scale
+            ) is None:
+                raise
+            size = args.output_scale.split(':')
+            if size[0] == size[1] == '-1':
+                raise
+            stored_size = (int(size[0]), int(size[1]))
+            if stored_size[0] == -1:
+                ratio = stored_size[1] / source_size[1]
+                stored_size = (
+                    int(source_size[0] * ratio),
+                    stored_size[1]
+                )
+            elif stored_size[1] == -1:
+                ratio = stored_size[0] / source_size[0]
+                stored_size = (
+                    stored_size[0],
+                    int(source_size[1] * ratio)
+                )
+            print(f"stored_size : {stored_size}")
+        except:
+            raise ValueError('The strings specified for scaling size are not correct. Please use "{width}:{height}". And you can specify one of them to be -1 to automatically scale, but not both.')
+    shouldResize = source_size != stored_size
+
     if args.video_output is None:
         vwriter = None
     else:
@@ -76,10 +116,7 @@ if __name__ == "__main__":
             args.video_output,
             cv2.VideoWriter_fourcc(*'X264'),
             int(worker.cap.get(cv2.CAP_PROP_FPS)),
-            (
-                int(worker.cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-                int(worker.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            )
+            stored_size
         )
     
     if args.stream_output is None:
@@ -91,6 +128,8 @@ if __name__ == "__main__":
         for i in range(11):
             t0 = time.time()
             fid, frame = next(worker_iter)
+            if shouldResize:
+                frame = cv2.resize(frame, stored_size)
             round_times[i] = time.time() - t0
             frame_buffer.append((fid, frame))
         stream_fps = 1.0 / round_times[1:].mean()
@@ -99,7 +138,7 @@ if __name__ == "__main__":
             '-f', 'rawvideo',
             '-vcodec','rawvideo',
             '-pix_fmt', 'bgr24',
-            '-s', f'{frame_buffer[0][1].shape[1]}x{frame_buffer[0][1].shape[0]}',
+            '-s', f'{stored_size[0]}x{stored_size[1]}',
             '-r', f'{stream_fps}',
             '-i', '-',
             '-vcodec', 'h264',
@@ -119,6 +158,8 @@ if __name__ == "__main__":
     try:
         for fid, frame in worker:
             print(f"Now is => [ {fid / worker.fps} ]", end='\r')
+            if shouldResize:
+                frame = cv2.resize(frame, stored_size)
             if vwriter is not None:
                 vwriter.write(frame)
             if ffmpeg_process is not None:

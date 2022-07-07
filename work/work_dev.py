@@ -142,7 +142,7 @@ if __name__ == "__main__":
             '-r', f'{stream_fps}',
             '-i', '-',
             '-vcodec', 'h264',
-            '-f', 'flv',
+            '-f', 'rtsp',
             args.stream_output
         ]
         ffmpeg_process = subprocess.Popen(

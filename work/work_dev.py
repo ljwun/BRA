@@ -130,6 +130,8 @@ if __name__ == "__main__":
             fid, frame = next(worker_iter)
             if shouldResize:
                 frame = cv2.resize(frame, stored_size)
+            if vwriter is not None:
+                vwriter.write(frame)
             round_times[i] = time.time() - t0
             frame_buffer.append((fid, frame))
         stream_fps = 1.0 / round_times[1:].mean()

@@ -38,6 +38,11 @@ def make_parser():
         help="media server location for pushing stream with ffmpeg"
     )
     parser.add_argument(
+        "-slog", "--stream_log",
+        type=str, default="stream_pushing.log",
+        help="log when pushing stream with ffmpeg"
+    )
+    parser.add_argument(
         "-s", "--output_scale",
         type=str, default=None,
         help="scaling of output stream and stored file"
@@ -147,9 +152,11 @@ if __name__ == "__main__":
             '-f', 'rtsp',
             args.stream_output
         ]
+        logFile = open(args.stream_log, 'w')
         ffmpeg_process = subprocess.Popen(
             command, shell=False, 
-            stdin=subprocess.PIPE
+            stdin=subprocess.PIPE,
+            stdout=logFile, stderr=logFile
         )
         print(f'FPS : {stream_fps}')
         for fid, frame in frame_buffer:
@@ -175,5 +182,9 @@ if __name__ == "__main__":
     except:
         raise
     finally:
+        if args.stream_output is not None:
+            logFile.close()
+        if ffmpeg_process is not None:
+            ffmpeg_process.kill()
         if vwriter is not None:
             vwriter.release()

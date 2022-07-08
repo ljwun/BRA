@@ -84,14 +84,14 @@ if __name__ == "__main__":
     if args.output_scale is not None:
         try:
             if re.match(
-                "^([1-9]\d*|-1):([1-9]\d*|-1)$",
+                "^\(([1-9]\d*|-1)\):\(([1-9]\d*|-1)\)$",
                 args.output_scale
             ) is None:
                 raise
             size = args.output_scale.split(':')
-            if size[0] == size[1] == '{-1}':
+            if size[0] == size[1] == '(-1)':
                 raise
-            stored_size = (int(size[0]), int(size[1]))
+            stored_size = (int(size[0][1:-1]), int(size[1][1:-1]))
             if stored_size[0] == -1:
                 ratio = stored_size[1] / source_size[1]
                 stored_size = (
@@ -106,7 +106,7 @@ if __name__ == "__main__":
                 )
             print(f"stored_size : {stored_size}")
         except:
-            raise ValueError('The strings specified for scaling size are not correct. Please use "{width}:{height}". And you can specify one of them to be -1 to automatically scale, but not both.')
+            raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
     shouldResize = source_size != stored_size
 
     if args.video_output is None:

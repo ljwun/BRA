@@ -27,13 +27,16 @@ class Worker3(BaseWorker):
         conf_path, track_parameter,
         record_life=50,
         metrics_duration=600,
-        metrics_update_time=5
+        metrics_update_time=5,
+        actual_framerate=None
     ):
         super().__init__()
         self.cap = cv2.VideoCapture(vin_path)
         if not self.cap.isOpened():
             raise Exception(f'Could not open file "{vin_path}"!')
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if actual_framerate is not None:
+            self.fps = actual_framerate
         self.frameID = 0
         self.retval = True
 

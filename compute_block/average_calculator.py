@@ -3,8 +3,8 @@ class ACBlock:
     def __init__(self, total_step, period_step):
         if total_step % period_step != 0:
             raise ValueError('parameter total_step must be divisible by paremeter period_step.')
-        self.AC_MAX_LEN = int(total_step / period_step)
-        self.AC_END = period_step
+        self.AC_MAX_LEN = round(total_step / period_step)
+        self.AC_END = round(period_step)
         self.record = queue.Queue(maxsize=self.AC_MAX_LEN)
         self.zero_buffer = {'numerator':0, 'denominator':0}
         self.period_buffer = {'numerator':0, 'denominator':0}

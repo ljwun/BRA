@@ -85,9 +85,32 @@ if __name__ == "__main__":
         "mot20":False,
     }
 
+    test_size = 11
+    frame_buffer = []
+    # framerate estimate
+    cap = cv2.VideoCapture(args.video_input)
+    if not cap.isOpened():
+        raise Exception(f'Could not open file "{args.video_input}"!')
+    actual_framerate = None
+    for i in range(test_size):
+        ret, frame = cap.read()
+        frame_buffer.append(frame)
+        if i == 0:
+            start = (
+                cap.get(cv2.CAP_PROP_POS_FRAMES),
+                cap.get(cv2.CAP_PROP_POS_MSEC)
+            )
+        if i == test_size - 1:
+            p = cap.get(cv2.CAP_PROP_POS_FRAMES)
+            t = cap.get(cv2.CAP_PROP_POS_MSEC)
+            actual_framerate = (p-start[0]) / (t-start[1]) * 1000.0
+    cap.release()
+    print(f'estimate framerate is : {actual_framerate}')
+
     worker = Worker3(
         args.video_input,
-        args.config, track_parameter
+        args.config, track_parameter,
+        actual_framerate = actual_framerate
     )
 
     source_size = (
@@ -125,7 +148,7 @@ if __name__ == "__main__":
     shouldResize = source_size != stored_size
 
     # worker_analysis
-    round_times = np.zeros(11)
+    round_times = np.zeros(test_size)
     frame_buffer = []
     worker_iter = iter(worker)
     for i in range(11):

@@ -33,6 +33,11 @@ def make_parser():
         help="store worker visualize result"
     )
     parser.add_argument(
+        "-vlog", "--vout_log",
+        type=str, default="video_storing.log",
+        help="log when store video result with ffmpeg"
+    )
+    parser.add_argument(
         "-so", "--stream_output",
         type=str, default=None,
         help="media server location for pushing stream with ffmpeg"
@@ -46,6 +51,11 @@ def make_parser():
         "-s", "--output_scale",
         type=str, default=None,
         help="scaling of output stream and stored file"
+    )
+    parser.add_argument(
+        "-en", "--output_encoder",
+        type=str, default="h264_nvenc",
+        help="storing and pushing stream video encoder"
     )
     parser.add_argument(
         "--track_thresh",
@@ -114,65 +124,82 @@ if __name__ == "__main__":
             raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
     shouldResize = source_size != stored_size
 
+    # worker_analysis
+    round_times = np.zeros(11)
+    frame_buffer = []
+    worker_iter = iter(worker)
+    for i in range(11):
+        t0 = time.time()
+        fid, frame = next(worker_iter)
+        if shouldResize:
+            frame = cv2.resize(frame, stored_size)
+        round_times[i] = time.time() - t0
+        frame_buffer.append((fid, frame))
+    worker_process_rate = 1.0 / round_times[1:].mean()
+
+
     if args.video_output is None:
-        vwriter = None
+        vwriter_process = None
     else:
-        vwriter = cv2.VideoWriter(
-            args.video_output,
-            cv2.VideoWriter_fourcc(*'X264'),
-            int(worker.cap.get(cv2.CAP_PROP_FPS)),
-            stored_size
-        )
-    
-    if args.stream_output is None:
-        ffmpeg_process = None
-    else:
-        round_times = np.zeros(11)
-        frame_buffer = []
-        worker_iter = iter(worker)
-        for i in range(11):
-            t0 = time.time()
-            fid, frame = next(worker_iter)
-            if shouldResize:
-                frame = cv2.resize(frame, stored_size)
-            if vwriter is not None:
-                vwriter.write(frame)
-            round_times[i] = time.time() - t0
-            frame_buffer.append((fid, frame))
-        stream_fps = 1.0 / round_times[1:].mean()
         command = ['ffmpeg',
             '-y', '-an',
             '-f', 'rawvideo',
             '-vcodec','rawvideo',
             '-pix_fmt', 'bgr24',
             '-s', f'{stored_size[0]}x{stored_size[1]}',
-            '-r', f'{stream_fps}',
+            '-r', f'{worker.fps}',
             '-i', '-',
-            '-vcodec', 'h264',
+            '-vcodec', args.output_encoder,
+            args.video_output
+        ]
+        vwriter_logFile = open(args.vout_log, 'w')
+        vwriter_process = subprocess.Popen(
+            command, shell=False, 
+            stdin=subprocess.PIPE,
+            stdout=vwriter_logFile, stderr=vwriter_logFile
+        )
+    
+    if args.stream_output is None:
+        ffmpeg_process = None
+    else:
+        command = ['ffmpeg',
+            '-y', '-an',
+            '-f', 'rawvideo',
+            '-vcodec','rawvideo',
+            '-pix_fmt', 'bgr24',
+            '-s', f'{stored_size[0]}x{stored_size[1]}',
+            '-r', f'{worker_process_rate}',
+            '-i', '-',
+            '-vcodec', args.output_encoder,
             '-f', 'rtsp',
             args.stream_output
         ]
-        logFile = open(args.stream_log, 'w')
+        stream_logFile = open(args.stream_log, 'w')
         ffmpeg_process = subprocess.Popen(
             command, shell=False, 
             stdin=subprocess.PIPE,
-            stdout=logFile, stderr=logFile
+            stdout=stream_logFile, stderr=stream_logFile
         )
-        print(f'FPS : {stream_fps}')
-        for fid, frame in frame_buffer:
-            print(f"Now is => [ {fid / worker.fps} ]", end='\r')
+    
+    print(f'FPS : {worker_process_rate}')
+    for fid, frame in frame_buffer:
+        print(f"Now is => [ {fid / worker.fps} ]", end='\r')
+        if ffmpeg_process is not None:
             ffmpeg_process.stdin.write(frame.data.tobytes())
-        print('\nstart working!!!')
+        if vwriter_process is not None:
+            vwriter_process.stdin.write(frame.data.tobytes())
+    print('\nstart working!!!')
     
     try:
         for fid, frame in worker:
             print(f"Now is => [ {fid / worker.fps} ]", end='\r')
             if shouldResize:
                 frame = cv2.resize(frame, stored_size)
-            if vwriter is not None:
-                vwriter.write(frame)
+            frameBytes = frame.data.tobytes()
             if ffmpeg_process is not None:
-                ffmpeg_process.stdin.write(frame.data.tobytes())
+                ffmpeg_process.stdin.write(frameBytes)
+            if vwriter_process is not None:
+                vwriter_process.stdin.write(frameBytes)
             if args.frame_limit > 1 and fid >= args.frame_limit:
                 break
         print('\n')
@@ -183,8 +210,10 @@ if __name__ == "__main__":
         raise
     finally:
         if args.stream_output is not None:
-            logFile.close()
+            stream_logFile.close()
+        if args.video_output is not None:
+            vwriter_logFile.close()
         if ffmpeg_process is not None:
-            ffmpeg_process.kill()
-        if vwriter is not None:
-            vwriter.release()
+            ffmpeg_process.terminate()
+        if vwriter_process is not None:
+            vwriter_process.terminate()

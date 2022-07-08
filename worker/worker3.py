@@ -31,6 +31,8 @@ class Worker3(BaseWorker):
     ):
         super().__init__()
         self.cap = cv2.VideoCapture(vin_path)
+        if not self.cap.isOpened():
+            raise Exception(f'Could not open file "{vin_path}"!')
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.frameID = 0
         self.retval = True

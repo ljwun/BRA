@@ -19,3 +19,4 @@ pretrain/*
 test/*
 *.ps1
 test_*
+*.log

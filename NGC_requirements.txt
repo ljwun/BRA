@@ -1,0 +1,16 @@
+loguru
+thop
+opencv-python==4.5.5.64
+tabulate
+pycocotools
+scipy
+wheel
+lap
+cython_bbox
+argparse
+tensorboard
+tqdm
+scikit-image
+pyyaml
+pandas
+ujson

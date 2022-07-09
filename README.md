@@ -1,4 +1,7 @@
 # Development Draft
+Our GPU is in NVIDIA Turing™ architecture family. We test on WSL2_Ubuntu20.04 with Windows Driver release 516.59. Ubuntu20.04 in WSL2 uses version2.11.0 of nvidia-docker2.[The NVIDIA documentation]('https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/rel_22-04.html') mentions that nvcr.io/nvidia/pytorch:22:04 requires a 510 or higher driver.
+
+---
 + download
   ```bash
   $ git clone --recurse-submodules https://github.com/YyuK-Liao/BRA

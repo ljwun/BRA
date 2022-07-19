@@ -4,3 +4,6 @@
 [submodule "third_party/ByteTrack"]
 	path = third_party/ByteTrack
 	url = https://github.com/YyuK-Liao/ByteTrack
+[submodule "third_party/fast-reid"]
+	path = third_party/fast-reid
+	url = https://github.com/JDAI-CV/fast-reid

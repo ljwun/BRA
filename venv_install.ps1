@@ -29,3 +29,5 @@ pip3 install scikit-image
 pip3 install pyyaml
 pip3 install pandas
 pip3 install ujson
+pip3 install yacs
+pip3 install termcolor

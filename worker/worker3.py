@@ -13,6 +13,8 @@ import compute_block as cmb
 from mask.checker import MaskChecker
 from detect import Detector
 from tracker.byte_tracker import BYTETracker
+from track.byte_tracker_reid import BYTETracker_reid
+from track.reid import AppearanceExtractor
 from distance.mapping import Mapper
 from distance.visual import WarningLine
 from scipy.spatial.distance import cdist
@@ -28,7 +30,8 @@ class Worker3(BaseWorker):
         record_life=50,
         metrics_duration=600,
         metrics_update_time=5,
-        actual_framerate=None
+        actual_framerate=None,
+        reid=False
     ):
         super().__init__()
         self.cap = cv2.VideoCapture(vin_path)
@@ -39,10 +42,15 @@ class Worker3(BaseWorker):
             self.fps = actual_framerate
         self.frameID = 0
         self.retval = True
+        self.reid = reid
 
         self.MDetector = MaskChecker("cuda:0", 'm', 'New_FMD_m1k.pth')
         self.PDetector = Detector('m', 0, True, True)
-        self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
+        if self.reid:
+            self.byteTracker = BYTETracker_reid(type('',(object,),track_parameter)(), frame_rate=self.fps)
+            self.appearanceExtractor = AppearanceExtractor("cuda:0")
+        else:
+            self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
         self.mapper = Mapper(conf_path)
         self.alcoholFilter = TargetFilter(conf_path, record_life)
 
@@ -74,11 +82,20 @@ class Worker3(BaseWorker):
         # [LEVEL_2_BLOCK] === INPUT -> LEVEL_1_PERSON_BLOCK result
         online_persons = []
         if person_outputs[0] is not None:
-            online_persons = self.byteTracker.update(
-                person_outputs[0], 
-                [person_info['height'], person_info['width']], 
-                self.PDetector.test_size
-            )
+            if self.reid:
+                feats = self.appearanceExtractor.extract_with_crop(frame, person_outputs[0], 0.1)
+                online_persons = self.byteTracker.update(
+                    person_outputs[0], 
+                    [person_info['height'], person_info['width']], 
+                    self.PDetector.test_size,
+                    feats
+                )
+            else:
+                online_persons = self.byteTracker.update(
+                    person_outputs[0], 
+                    [person_info['height'], person_info['width']], 
+                    self.PDetector.test_size
+                )
         with_mask, without_mask = [], []
         if mask_outputs[0] is not None:
             mask_out = mask_outputs[0].cpu()

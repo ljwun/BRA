@@ -72,6 +72,11 @@ def make_parser():
         type=float, default=0.8,
         help="matching threshold for tracking"
     )
+    parser.add_argument(
+        '--reid', 
+        action='store_true',
+        help='using reid module to provide appearance features'
+    )
     return parser
 
 if __name__ == "__main__":
@@ -110,7 +115,8 @@ if __name__ == "__main__":
     worker = Worker3(
         args.video_input,
         args.config, track_parameter,
-        actual_framerate = actual_framerate
+        actual_framerate = actual_framerate,
+        reid=args.reid
     )
 
     source_size = (

@@ -22,7 +22,7 @@ from wash_hand.alcohol import TargetFilter
 
 from .BaseWorker import BaseWorker
 
-class Worker3(BaseWorker):
+class Worker(BaseWorker):
     def __init__(
         self,
         vin_path, 

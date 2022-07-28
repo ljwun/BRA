@@ -6,10 +6,10 @@ import numpy as np
 import subprocess
 import time
 import re
+import importlib
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
-from worker.worker3 import Worker3
 def make_parser():
     parser = argparse.ArgumentParser("simple block work flow")
     parser.add_argument(
@@ -23,9 +23,14 @@ def make_parser():
         help="YAML format configuration to worker"
     )
     parser.add_argument(
-        "-fl", "--frame_limit",
-        type=int, default=-1,
-        help="stop after frame amount"
+        "-d", "--duration",
+        type=int, default=None,
+        help="stop after duration(s)"
+    )
+    parser.add_argument(
+        "-fps", "--fps",
+        type=float, default=None,
+        help="disable auto fps calculation"
     )
     parser.add_argument(
         "-vout", "--video_output",
@@ -77,6 +82,11 @@ def make_parser():
         action='store_true',
         help='using reid module to provide appearance features'
     )
+    parser.add_argument(
+        '-worker', '--worker_file',
+        type=str, default="worker.worker3",
+        help='specify which worker definition you want to use'
+    )
     return parser
 
 if __name__ == "__main__":
@@ -93,29 +103,35 @@ if __name__ == "__main__":
     test_size = 11
     frame_buffer = []
     # framerate estimate
-    cap = cv2.VideoCapture(args.video_input)
-    if not cap.isOpened():
-        raise Exception(f'Could not open file "{args.video_input}"!')
-    actual_framerate = None
-    for i in range(test_size):
-        ret, frame = cap.read()
-        frame_buffer.append(frame)
-        if i == 0:
-            start = (
-                cap.get(cv2.CAP_PROP_POS_FRAMES),
-                cap.get(cv2.CAP_PROP_POS_MSEC)
-            )
-        if i == test_size - 1:
-            p = cap.get(cv2.CAP_PROP_POS_FRAMES)
-            t = cap.get(cv2.CAP_PROP_POS_MSEC)
-            actual_framerate = (p-start[0]) / (t-start[1]) * 1000.0
-    cap.release()
-    print(f'estimate framerate is : {actual_framerate}')
+    if args.fps is None:
+        cap = cv2.VideoCapture(args.video_input)
+        if not cap.isOpened():
+            raise Exception(f'Could not open file "{args.video_input}"!')
+        framerate = None
+        for i in range(test_size):
+            ret, frame = cap.read()
+            frame_buffer.append(frame)
+            if i == 0:
+                start = (
+                    cap.get(cv2.CAP_PROP_POS_FRAMES),
+                    cap.get(cv2.CAP_PROP_POS_MSEC)
+                )
+            if i == test_size - 1:
+                p = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                t = cap.get(cv2.CAP_PROP_POS_MSEC)
+                framerate = (p-start[0]) / (t-start[1]) * 1000.0
+        cap.release()
+        print(f'estimate framerate is : {framerate}')
+    else:
+        framerate = args.fps
+        print(f'framerate is : {framerate}')
+    frame_limit = None if args.duration is None else round(args.duration * framerate) 
 
-    worker = Worker3(
+    Worker = importlib.import_module(args.worker_file).Worker
+    worker = Worker(
         args.video_input,
         args.config, track_parameter,
-        actual_framerate = actual_framerate,
+        actual_framerate = framerate,
         reid=args.reid
     )
 
@@ -210,7 +226,7 @@ if __name__ == "__main__":
             stdout=stream_logFile, stderr=stream_logFile
         )
     
-    print(f'FPS : {worker_process_rate}')
+    print(f'Working FPS is : {worker_process_rate}')
     for fid, frame in frame_buffer:
         print(f"Now is => [ {fid / worker.fps} ]", end='\r')
         if ffmpeg_process is not None:
@@ -229,7 +245,7 @@ if __name__ == "__main__":
                 ffmpeg_process.stdin.write(frameBytes)
             if vwriter_process is not None:
                 vwriter_process.stdin.write(frameBytes)
-            if args.frame_limit > 1 and fid >= args.frame_limit:
+            if frame_limit is not None and fid >= frame_limit:
                 break
         print('\n')
     except KeyboardInterrupt:

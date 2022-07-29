@@ -108,7 +108,10 @@ class Worker(BaseWorker):
         notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.alcoholFilter.work(online_persons)
         bottom_center_points = np.asarray([(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in online_persons])
         IPM_points = self.mapper.points_warp(bottom_center_points)
-        distance = cdist(IPM_points, IPM_points, 'euclidean')
+        if bottom_center_points.shape[0] != 0:
+            distance = cdist(IPM_points, IPM_points, 'euclidean')
+        else:
+            distance = np.zeros(0)
         
         # [LEVEL_4_BLOCK] === INPUT -> numerator and denominator
         total_distance = distance.sum() / 2
@@ -146,7 +149,8 @@ class Worker(BaseWorker):
             frame,
             texts, (0, 0),
             ratio=1, thickness=3,
-            fg_color=(0 ,0 ,0), bg_color=(255, 255, 255)
+            fg_color=(0 ,0 ,0), bg_color=(255, 255, 255),
+            point_reverse=(False,True)
         )
         texts = [
             f'Period-time average:',
@@ -161,7 +165,7 @@ class Worker(BaseWorker):
             texts, (0, 0),
             ratio=1, thickness=3,
             fg_color=(255, 255, 255), bg_color=(0 ,0 ,0),
-            point_reverse=(True,False)
+            point_reverse=(True,True)
         )
 
         # [LEVEL_7_BLOCK] === OUTPUT -> frame and assessment

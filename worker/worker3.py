@@ -18,7 +18,7 @@ from track.reid import AppearanceExtractor
 from distance.mapping import Mapper
 from distance.visual import WarningLine
 from scipy.spatial.distance import cdist
-from wash_hand.alcohol import TargetFilter
+from wash_hand import EventFilter
 
 from .BaseWorker import BaseWorker
 
@@ -27,7 +27,7 @@ class Worker(BaseWorker):
         self,
         vin_path, 
         conf_path, track_parameter,
-        record_life=50,
+        record_life=2,
         metrics_duration=600,
         metrics_update_time=5,
         actual_framerate=None,
@@ -52,7 +52,7 @@ class Worker(BaseWorker):
         else:
             self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
         self.mapper = Mapper(conf_path)
-        self.alcoholFilter = TargetFilter(conf_path, record_life)
+        self.alcoholFilter = EventFilter(conf_path, record_life, self.fps)
 
         self.mask_metrics = cmb.ACBlock(
             self.fps*metrics_duration,
@@ -105,7 +105,7 @@ class Worker(BaseWorker):
             without_mask = out['without_mask']
             
         # [LEVEL_3_BLOCK] === INPUT -> tracked ID and tracked person
-        notWashIds, wrongWashIds, correctWashIds = self.alcoholFilter.work(online_persons)
+        notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.alcoholFilter.work(online_persons)
         bottom_center_points = np.asarray([(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in online_persons])
         IPM_points = self.mapper.points_warp(bottom_center_points)
         distance = cdist(IPM_points, IPM_points, 'euclidean')

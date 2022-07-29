@@ -1,0 +1,240 @@
+import pandas as pd
+import yaml
+from numpy import isnan
+import cv2
+
+class TriggerNode:
+    def __init__(self, triggers):
+        self.triggerList = triggers
+    def __call__(self, inputs):
+        chain = [True for _ in range(len(inputs))]
+        for trigger in self.triggerList:
+            chain = trigger(inputs, chain)
+        return chain
+
+class EventFilter:
+    def __init__(self, configPath, record_life=5, fps=25):
+        configStream = open(configPath, 'r')
+        self.config = yaml.safe_load(configStream)
+        configStream.close()
+        # ===============================================================
+        self.collector = []
+        self.analyst_table = pd.DataFrame(columns=['targetCounter', 'nonTargetCounter'])
+        self.base = []
+        self.tracer_table = pd.DataFrame(columns=['type', 'deathCounter'])
+        self.tracer_life = round(record_life * fps)
+        # ===============================================================
+        self.targetThreshold = round(self.config['Threshold']['target'] * fps)
+        self.nonTargetThreshold = round(self.config['Threshold']['nonTarget'] * fps)
+        self.waitingThreshold = round(self.config['Threshold']['waiting'] * fps)
+        # ===============================================================
+        self.deserialize(self.config['trigger_description'])
+
+    def work(self, inputs):
+        # inputs are list of object data with its properties
+
+        '''
+        All trigger functions define in collector and base will 
+        filter input individually, and filtering result will be 
+        represented as a boolean list.
+        '''
+        c_result = [node(inputs) for node in self.collector]
+        b_result = [node(inputs) for node in self.base]
+
+        '''
+        Step 0: Start a new iteration
+        '''
+        self.analyst_table.iloc[:]['nonTargetCounter'] += 1
+        self.tracer_table.iloc[:]['deathCounter'] += 1
+
+        '''
+        Step 1: Update status(after collector)
+        Considering the calculation noise, the determination time 
+        is made up when the target behavior is detected again.
+        
+        The target state is considered to be left only if the 
+        target behavior is not performed continuously.
+        '''
+        for obj, b_result_column in zip(inputs, zip(*b_result)):
+            pid = obj.track_id
+            if any(b_result_column) and pid in self.analyst_table.index:
+                if isnan(self.analyst_table.loc[pid, 'targetCounter']):
+                    self.analyst_table.loc[pid, 'targetCounter'] = 0
+                    self.analyst_table.loc[pid, 'nonTargetCounter'] = 0
+                else:
+                    self.analyst_table.loc[pid, 'targetCounter'] += self.analyst_table.loc[pid, 'nonTargetCounter']
+                    self.analyst_table.loc[pid, 'nonTargetCounter'] = 0
+            if pid in self.tracer_table.index:
+                self.tracer_table.loc[pid, 'deathCounter'] = 0
+
+        '''
+        Step 2: Update status(in collector)
+        According to the trigger, the inputs will be filtered out
+        of the target. They will be sent to the collector side.
+        '''
+        for obj, c_result_column in zip(inputs, zip(*c_result)):
+            pid = obj.track_id
+            if any(c_result_column):
+                self.analyst_table.loc[pid] = [None, 0]
+
+        '''
+        Step 3: Emit targets that activates the trigger and reaches the threshold
+        There are three emit conditions.
+            1. Targets that never activate the triggers over time.
+            2. Targets that activate the triggers, but not reach the thresholds.
+            3. Targets that activate the triggers and reach the thresholds.
+        '''
+        self.tracer_table = self.tracer_table.loc[self.tracer_table['deathCounter'] < self.tracer_life]
+
+        if self.analyst_table.size == 0:
+            return [], [], [], c_result, b_result
+
+        nonTarget = isnan(self.analyst_table['targetCounter']) & (self.analyst_table['nonTargetCounter'] >= self.nonTargetThreshold)
+        nonTargetIds = self.analyst_table.loc[nonTarget].index
+        for i in nonTargetIds: self.tracer_table.loc[i] = [1, 0]
+        self.analyst_table = self.analyst_table.loc[~nonTarget]
+
+        wrongTarget = ~isnan(self.analyst_table['targetCounter']) & (self.analyst_table['nonTargetCounter'] >= self.waitingThreshold)
+        wrongTargetIds = self.analyst_table.loc[wrongTarget].index
+        for i in wrongTargetIds: self.tracer_table.loc[i] = [2, 0]
+        self.analyst_table = self.analyst_table.loc[~wrongTarget]
+
+        correctTarget = self.analyst_table['targetCounter'] >= self.targetThreshold
+        correctTargetIds = self.analyst_table.loc[correctTarget].index
+        for i in correctTargetIds: self.tracer_table.loc[i] = [3, 0]
+        self.analyst_table = self.analyst_table.loc[~correctTarget]
+
+        return nonTargetIds, wrongTargetIds, correctTargetIds, c_result, b_result
+
+    def __virtualFence(self, vertex_type, fence, fn=None):
+        '''
+        We apply Point in Polygon Strategies to check whether
+        a single vertex is in specified range or not.
+
+        vertex_type = (0,0)->left top
+                      (0,1)->left bottom
+                      (1,1)->right bottom
+                      (1,0)->right top
+        '''
+        def instanceFence(objs, filtered_result):
+            result = []
+            for obj, tag in zip(objs, filtered_result):
+                if tag:
+                    p = {
+                        'x':obj.tlwh[0]+vertex_type['x']*obj.tlwh[2], 
+                        'y':obj.tlwh[1]+vertex_type['y']*obj.tlwh[3]
+                    }
+                    result.append(windingNumber(p, fence) != 0)
+                else:
+                    result.append(False)
+            return result
+        return instanceFence
+
+    def __edgeTrigger(self):
+        pre_filtered_ids = []
+        def instanceEdgeTrigger(objs, filtered_result):
+            result = []
+            current_filtered_ids = []
+            nonlocal pre_filtered_ids
+            for obj, tag in zip(objs, filtered_result):
+                if not tag:
+                    result.append(obj.track_id in pre_filtered_ids)
+                else:
+                    current_filtered_ids.append(obj.track_id)
+                    result.append(False)
+            pre_filtered_ids = current_filtered_ids
+            return result
+        return instanceEdgeTrigger
+
+    def __checkAttr(self, thres, fn=None):
+        def instanceCheck(objs, filtered_result):
+            result = []
+            for obj, tag in zip(objs, filtered_result):
+                if tag:
+                    aspect_ratio = obj.tlwh[2] / obj.tlwh[3]
+                    result.append(thres['min'] < aspect_ratio < thres['max'])
+                else:
+                    result.append(False)
+            return result
+        return instanceCheck
+
+    def visualize(self, frame, online_persons):
+        for target in online_persons:
+            tID = target.track_id
+            if tID not in self.tracer_table.index:
+                continue
+            tType = self.tracer_table.loc[tID, 'type']
+            xmin, ymin, w, h = target.tlwh
+            box = tuple(map(int, (xmin, ymin, xmin+w, ymin+h)))
+            if tType == 1:
+                color = (82, 4, 28)
+                text = 'bad'
+            elif tType == 2:
+                color = (176, 21, 61)
+                text = 'wrong'
+            elif tType == 3:
+                color = (255, 255, 255)
+                text = 'OK'
+            cv2.rectangle(frame, box[0:2], box[2:4], color=color, thickness=5)
+            cv2.putText(frame, f'{text}|{tID}|{w/h:.3f}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 5, color, thickness=3)
+
+        for target in online_persons:
+            tID = target.track_id
+            if tID not in self.analyst_table.index:
+                continue
+            xmin, ymin, w, h = target.tlwh
+            box = tuple(map(int, (xmin, ymin, xmin+w, ymin+h)))
+            if isnan(self.analyst_table.loc[tID, 'targetCounter']):
+                color = (0, 255, 255)
+                text = f"dirty={self.analyst_table.loc[tID, 'nonTargetCounter']}"
+            else:
+                color = (255, 153, 255)
+                text = f"clean={self.analyst_table.loc[tID, 'targetCounter']}"
+            cv2.rectangle(frame, box[0:2], box[2:4], color=color, thickness=3)
+            cv2.putText(frame, f'{tID}|{text}|{w/h:.3f}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 3, color, thickness=3)
+
+    def __parseTrigger(self, node_description):
+        trigger = []
+        for line in node_description:
+            if line['type'] == 'Fence':
+                trigger.append(
+                    self.__virtualFence(
+                        line['parameter']['vertex_type'], 
+                        line['parameter']['positions']
+                    )
+                )
+            elif line['type'] == 'Edge':
+                trigger.append(
+                    self.__edgeTrigger()
+                )
+            elif line['type'] == 'AttrFilter':
+                trigger.append(
+                    self.__checkAttr(
+                        line['parameter']['range']
+                    )
+                )
+        return TriggerNode(trigger)
+
+    def deserialize(self, trigger_description):
+        collector_description = trigger_description['collector']
+        base_description = trigger_description['base']
+        for c_node_description in collector_description:
+            self.collector.append(self.__parseTrigger(c_node_description))
+        for b_node_description in base_description:
+            self.base.append(self.__parseTrigger(b_node_description))
+
+def windingNumber(point, vertexs):
+    # https://web.archive.org/web/20130126163405/http://geomalgorithms.com/a03-_inclusion.html
+    def isLeft(p0, p1, p2):
+        return ( (p1['x']-p0['x']) * (p2['y']-p0['y']) - (p2['x']-p0['x'])  *   (p1['y']-p0['y']) )
+    wn = 0
+    for i in range(len(vertexs)):
+        if vertexs[i]['y'] <= point['y']:
+            if vertexs[(i+1)%len(vertexs)]['y'] > point['y']:
+                if isLeft(vertexs[i], vertexs[(i+1)%len(vertexs)], point) > 0:
+                    wn += 1
+        else:
+            if vertexs[(i+1)%len(vertexs)]['y'] <= point['y']:
+                if isLeft(vertexs[i], vertexs[(i+1)%len(vertexs)], point) < 0:
+                    wn -= 1
+    return wn

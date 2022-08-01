@@ -1,11 +1,28 @@
 import argparse
 import os
+import os.path as osp
+import sys
 import yaml
 from PIL import Image
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
+from matplotlib.patches import Circle, Polygon
 from matplotlib.backend_bases import MouseButton
 import re
+import math
+import numpy as np
+import cv2
+from rich.console import Console
+from rich.tree import Tree
+from rich.traceback import install
+install(show_locals=True)
+import collections.abc
+from typing import Any
+from collections import deque
+console = Console()
+
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
+sys.path.append(__proot__)
+from distance.mapping import Mapper
 
 def make_parser():
     parser = argparse.ArgumentParser("pre/re-configure BRA system")
@@ -16,12 +33,12 @@ def make_parser():
     action.add_argument("-v", "--visualize", action="store_true", help="view the visualize setting")
     return parser
 
-def onclick(marks, texts, ax, base_scale = 1):
+def onclick(marks, mark_info, polygon, polygon_info, texts, ax, base_scale = 1, ex_fn=None):
     def fn(event):
         if event.dblclick and event.button is MouseButton.LEFT:
             ix, iy = event.xdata, event.ydata
             if ix != None or iy != None:
-                circle = Circle((ix, iy), 5*base_scale, color='red')
+                circle = Circle((ix, iy), mark_info['size'], color=mark_info['color'], alpha=mark_info['alpha'])
                 ax.add_patch(circle)
                 text = ax.annotate(
                         f'{len(marks)+1}', (ix, iy),
@@ -29,16 +46,44 @@ def onclick(marks, texts, ax, base_scale = 1):
                         ha='center', va='center')
                 marks.append(circle)
                 texts.append(text)
+                if len(marks) >= 3:
+                    if len(polygon) > 0:
+                        polygon.pop().remove()
+                    polygon.append(
+                        Polygon(
+                            [circle.center for circle in marks],
+                            color=polygon_info['color'], 
+                            alpha=polygon_info['alpha'],
+                            zorder=polygon_info['zorder']
+                        )
+                    )
+                    ax.add_patch(polygon[0])
         elif event.button is MouseButton.RIGHT:
             if len(marks) > 0:
                 circle = marks.pop(-1)
                 circle.remove()
                 text = texts.pop(-1)
                 text.remove()
+            if len(marks) < 3 and len(polygon) > 0:
+                polygon.pop().remove()
+            elif len(marks) >= 3:
+                if len(polygon) > 0:
+                    polygon.pop().remove()
+                polygon.append(
+                    Polygon(
+                        [circle.center for circle in marks],
+                        color=polygon_info['color'], 
+                        alpha=polygon_info['alpha'],
+                        zorder=polygon_info['zorder']
+                    )
+                )
+                ax.add_patch(polygon[0])
         plt.draw()
+        if ex_fn is not None:
+            ex_fn(marks, texts, ax, base_scale)
     return fn
 
-def onscroll(ax,base_scale = 2):
+def onscroll(ax, marks, mark_info, base_scale = 2):
     def fn(event):
         # get the current x and y limits
         cur_xlim = ax.get_xlim()
@@ -61,18 +106,33 @@ def onscroll(ax,base_scale = 2):
                      xdata + cur_xrange*scale_factor])
         ax.set_ylim([ydata - cur_yrange*scale_factor,
                      ydata + cur_yrange*scale_factor])
+        mark_info['size'] *= math.sqrt(scale_factor)
+        for circle in marks:
+            circle.radius = mark_info['size']
+            circle.set_alpha(mark_info['alpha'])
         plt.draw()
     return fn
 
-def uiMark(background, title, default=None):
+def uiMark(background, title, default=None, fn=None):
     size = (background.size[0] + background.size[1]) * 0.001
     fig, ax = plt.subplots(1)
     marks = []
+    polygon = []
     texts=[]
+    mark_info = {
+        'size': 7*size,
+        'color': 'red',
+        'alpha': 0.6
+        }
+    polygon_info = {
+        'color': 'green',
+        'alpha': 0.4,
+        'zorder':0.8,
+    }
     # 載入現有資料
     if default is not None:
         for p in default:
-            circle = Circle((p['x'], p['y']), 5*size, color='red')
+            circle = Circle((p['x'], p['y']), mark_info['size'], color=mark_info['color'], alpha=mark_info['alpha'])
             ax.add_patch(circle)
             text = ax.annotate(
                     f'{len(marks)+1}', (p['x'], p['y']),
@@ -80,19 +140,78 @@ def uiMark(background, title, default=None):
                     ha='center', va='center')
             marks.append(circle)
             texts.append(text)
+        if len(marks) > 3:
+            polygon.append(
+                Polygon(
+                    [circle.center for circle in marks],
+                    color=polygon_info['color'], 
+                    alpha=polygon_info['alpha'],
+                    zorder=polygon_info['zorder']
+                )
+            )
+            ax.add_patch(polygon[0])
     ax.imshow(background)
-    plt.connect('scroll_event', onscroll(ax))
-    plt.connect('button_press_event', onclick(marks, texts, ax, size))
+    plt.connect('scroll_event', onscroll(ax, marks, mark_info))
+    plt.connect('button_press_event', onclick(marks, mark_info, polygon, polygon_info, texts, ax, size, ex_fn=fn))
     plt.title(label=title, fontweight=40)
     plt.show()
     return marks
 
+def parameter_tree(title, values):
+    tree = Tree(title)
+    for v in values:
+        tree.add(v)
+    return tree
+
+def prompt(
+    prompt_str : str, 
+    default : Any=None, 
+    reg : str='.*', 
+    choice : [list[Any]]=[], 
+    parser : collections.abc.Callable[[Any]:Any] = lambda x:x
+)->Any:
+    if len(choice) == 0:
+        choice_str = ""
+    else:
+        choice_str = f"({', '.join([f'[bold yellow]{v}[/]' for v in choice])})" 
+    while True:
+        value = console.input(f'{prompt_str}{choice_str} ')
+        if len(value) == 0 and default is None:
+            console.print('[bold red]Empty value.Please try again.')
+            continue
+        elif len(value) == 0:
+            value = f'{default}'
+        if re.match(reg, value) is None:
+            console.print('[bold red]Invalid value.Please try again.')
+            continue
+        if len(choice) > 0 and parser(value) not in choice:
+            console.print('[bold red]Value should in choice.Please try again.')
+            continue
+        return parser(value)
+
+def perspectiveWarp(points, M):
+    p = []
+    for x, y in points:
+        D = M[2, 0] * x + M[2, 1] * y + M[2, 2]
+        p.append((
+            int((M[0, 0] * x + M[0, 1] * y + M[0, 2]) / D),
+            int((M[1, 0] * x + M[1, 1] * y + M[1, 2]) / D)
+        ))
+    return p
+                                       
+# ref from https://stackoverflow.com/questions/3232943/update-value-of-a-nested-dictionary-of-varying-depth
+def update(d, u):
+    for k, v in u.items():
+        if isinstance(v, collections.abc.Mapping):
+            d[k] = update(d.get(k, {}), v)
+        else:
+            d[k] = v
+    return d
 
 if __name__ == "__main__":
     # generate from https://patorjk.com/software/taag/
     # font is Crawford2
-    print(
-        """
+    title="""
 ______________________________________________________________________________
        ____   ____    ____         __   ___   ____   _____  ____   ____ 
       |    \ |    \  /    |       /  ] /   \ |    \ |     ||    | /    |
@@ -103,7 +222,7 @@ ______|     ||    /_|     |_____/  /__|  O  ||  |  ||  |____|  |_|  |__|______
       |_____||__|\_||__|__|     \____| \___/ |__|__||__|   |____||___,_|
 ______________________________________________________________________________
         """
-    )
+    console.print(f'[bold red]{title}[/]')
     args = make_parser().parse_args()
     confName = None
     targetName = None
@@ -123,41 +242,141 @@ ______________________________________________________________________________
             obj = {
                 'target':targetName,
                 'BEV':{
+                    'mapping':{
+                        'height':None,
+                        'width':None,
+                        'biasX':None,
+                        'biasY':None,
+                        'viewW':None,
+                        'viewH':None,
+                    },
+                    'view':[],
                     'position':[],
-                    'mapping':{},
                 },
-                'Fences':{},
-                'Threshold':{},
+                'trigger_description':{
+                    'threshold':{
+                        'target':None,
+                        'nonTarget':None,
+                        'waiting':None,
+                    },
+                    'collector':[],
+                    'base':[],
+                }
             }
-            # 讀入現存的檔案
+
             if os.path.exists(confName):
                 configStream = open(confName, 'r')
-                obj = yaml.safe_load(configStream)
+                obj = update(obj, yaml.safe_load(configStream))
                 configStream.close()
-            print(f'[>] Starting setting perspective parameter for square...')
+
+            process_pipeline = deque()
             background = Image.open(targetName)
-            marks = uiMark(background, "Please label perspective mapping source", default=obj['BEV']['position'])
-            print('[>] parameters:')
-            for mark in marks[:-1]:
-                print(f'\t├─{mark.center}')
-            print(f'\t└─{marks[-1].center}')
-            obj['BEV']['position'] = [{
-                'x':float(mark.center[0]),
-                'y':float(mark.center[1])
-            } for mark in marks]
-            # 載入舊有的映射點資訊
-            # 默認為舊有的資料
-            # 還需額外確認輸入的是正常的數字（regex）
-            print('[>] Please type width (P2-P3 & P4-P1) of this square mapping for...')
-            default_str = f" ({obj['BEV']['mapping']['width']})" if 'width' in obj['BEV']['mapping'] else ""
-            map_width = input(f'[mapping width  <{default_str}] ')
-            print('[>] Please type height(P1-P2 & P3-P4) of this square mapping for...')
-            default_str = f" ({obj['BEV']['mapping']['height']})" if 'height' in obj['BEV']['mapping'] else ""
-            map_height = input(f'[mapping height <{default_str}] ')
-            obj['BEV']['mapping'] = {
-                'width':int(map_width) if len(map_width)!=0 else obj['BEV']['mapping']['width'],
-                'height':int(map_height) if len(map_height)!=0 else obj['BEV']['mapping']['height']
-            }
+
+            if len(obj['BEV']['position']) == 4:
+                console.print(f'[>] Read BEV positions from file:{targetName}.')
+            else:
+                process_pipeline.append('position')
+            if (
+                obj['BEV']['mapping']['height'] is not None and 
+                obj['BEV']['mapping']['width'] is not None and
+                obj['BEV']['mapping']['biasX'] is not None and 
+                obj['BEV']['mapping']['biasY'] is not None and
+                obj['BEV']['mapping']['viewW'] is not None and
+                obj['BEV']['mapping']['viewH'] is not None
+            ):
+                console.print(f'[>] Read BEV parameters from file:{targetName}.')
+            elif (
+                obj['BEV']['mapping']['width'] is None or
+                obj['BEV']['mapping']['height'] is None
+            ):
+                process_pipeline.append('mapWH')
+            else:
+                process_pipeline.append('view')
+            process_pipeline.append('result')
+
+            while len(process_pipeline) > 0:
+                process = process_pipeline.popleft()
+                if process == 'position':
+                    console.print(f'[>] Starting setting [bold red]perspective parameter[/] for square...')
+                    marks = uiMark(background, "Please label perspective mapping source", default=obj['BEV']['position'])
+                    console.print(
+                        parameter_tree(
+                            '[>] parameters:', 
+                            [f'{mark.center}' for mark in marks]
+                        )
+                    )
+                    obj['BEV']['position'] = [{
+                        'x':float(mark.center[0]),
+                        'y':float(mark.center[1])
+                    } for mark in marks]
+                elif process == 'mapWH':
+                    console.print('[>] Please type width ([bold red]P2-P3[/] & [bold red]P4-P1[/]) of this square mapping for...')
+                    default = obj['BEV']['mapping']['width']
+                    default_str = "" if default is None else f"([bold green]{default}[/])"
+                    obj['BEV']['mapping']['width'] = prompt(f'[mapping width  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
+                    console.print('[>] Please type height([bold red]P1-P2[/] & [bold red]P3-P4[/]) of this square mapping for...')
+                    default = obj['BEV']['mapping']['height']
+                    default_str = "" if default is None else f"([bold green]{default}[/])"
+                    obj['BEV']['mapping']['height'] = prompt(f'[mapping height  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
+                elif process == 'view':
+                    console.print(f'[>] Starting setting [bold red]perspective view area[/]...')
+                    mapH, mapW = obj['BEV']['mapping']['height'], obj['BEV']['mapping']['width']
+                    points = [(p['x'], p['y']) for p in obj['BEV']['position']]
+                    points = np.asarray(points, dtype='float32')
+                    view = [(p['x'], p['y']) for p in obj['BEV']['view']]
+                    view = np.asarray(view, dtype='float32')
+                    marks = uiMark(background, "Please label view area", default=obj['BEV']['view'])
+                    if len(marks) != 4:
+                        console.print(f'[bold red]Need 4 labels, but just get {len(marks)}.')
+                        process_pipeline.appendleft('view')
+                        continue
+                    obj['BEV']['view'] = [{
+                        'x':float(mark.center[0]),
+                        'y':float(mark.center[1])
+                    } for mark in marks]
+                    midPtr = np.float32([
+                        [0, 0], [0, mapH],
+                        [mapW, mapH], [mapW, 0]]
+                    )
+                    midM = cv2.getPerspectiveTransform(points, midPtr)
+                    corners = perspectiveWarp(
+                        np.float32([mark.center for mark in marks]),
+                        midM
+                    )
+                    maxXY, minXY = np.amax(corners, axis=0), np.amin(corners, axis=0)
+                    xmin, xmax = minXY[0], maxXY[0]
+                    ymin, ymax = minXY[1], maxXY[1]
+                    obj['BEV']['mapping']['biasX'] = 0 - xmin
+                    obj['BEV']['mapping']['biasY'] = 0 - ymin
+                    obj['BEV']['mapping']['viewW'] = xmax - xmin
+                    obj['BEV']['mapping']['viewH'] = ymax - ymin
+                elif process == 'result':
+                    mapH, mapW = obj['BEV']['mapping']['height'], obj['BEV']['mapping']['width']
+                    points = [(p['x'], p['y']) for p in obj['BEV']['position']]
+                    points = np.asarray(points, dtype='float32')
+                    biasX, biasY = obj['BEV']['mapping']['biasX'], obj['BEV']['mapping']['biasY']
+                    console.print(obj['BEV']['mapping'])
+                    dstPtr = np.float32([
+                        [biasX, biasY], [biasX, biasY+mapH],
+                        [biasX+mapW, biasY+mapH], [biasX+mapW, biasY]]
+                    )
+                    M = cv2.getPerspectiveTransform(points, dstPtr)
+                    view = (obj['BEV']['mapping']['viewW'], obj['BEV']['mapping']['viewH'])
+                    BEV_est = cv2.warpPerspective(np.array(background), M, view)
+                    plt.imshow(BEV_est)
+                    plt.show()
+                        
+                    then = prompt(f'[>] Edit again?', default='No', choice=['position', 'mapWH', 'view', 'No'])
+                    if then == 'No':
+                        break
+                    else:
+                        process_pipeline.append(then)
+                        if then != 'view':
+                            process_pipeline.append('view')
+                        process_pipeline.append('result')
+
+
+
 
             # 由於同意場景的虛擬柵欄數量可能不一樣，需要先確認
             print(f'\n[>] Starting setting fence parameter...')
@@ -213,16 +432,3 @@ ______________________________________________________________________________
             
             with open(confName, 'w') as outfile:
                 yaml.dump(obj, outfile, default_flow_style=False)
-
-    # while True:
-    #     # 詢問:「你需要甚麼」
-    #     # 選項:
-    #     #       -可視化 （若沒有現有的內容，則跳出警語）> （詢問要可視化的項目項目）
-    #     #       -完整互動式設置 （若文件已存在，則會再次警告，覆蓋原始設定）
-    #     #       -項目設定 （跳出可設定的細項）
-    #     #       -保存
-    #     #       -離開 （離開前會先檢查記憶體項目與實際項目使否不同，若不同則警告）
-    #     print('(v)isualization (S)etting (')
-
-    #     # 目前暫定設定項目:所有、透視、虛擬柵欄、屬性過濾閥值等
-    #     # 若找不到目標影像，也會跳警告

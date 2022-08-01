@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 
 class Mapper:
-    def __init__(self, configPath, biasX=0, biasY=0):
+    def __init__(self, configPath):
         # loading yaml config file
         configStream = open(configPath, 'r')
         config = yaml.safe_load(configStream)
@@ -12,6 +12,8 @@ class Mapper:
         points = config['BEV']['position']
         points = [(p['x'], p['y']) for p in points]
         points = np.asarray(points, dtype='float32')
+        biasX = config['BEV']['mapping']['biasX']
+        biasY = config['BEV']['mapping']['biasY']
         mapW = config['BEV']['mapping']['width']
         mapH = config['BEV']['mapping']['height']
         dstPtr = np.float32([

@@ -208,6 +208,93 @@ def update(d, u):
             d[k] = v
     return d
 
+def OEDparse(OED:str)->list:
+    nodes = []
+    for node_desc in OED:
+        triggers = []
+        for trigger_desc in node_desc:
+            trigger_parameter =  dict()
+            if len(trigger_desc) > 3:
+                pstring = re.split(',\s?', trigger_desc[2:-1])
+                kv = [re.split('\s?=\s?', p) for p in pstring]
+                for i, k, v in enumerate(kv):
+                    if re.match('^((-|\+)?\d+(\.\d*)?)$', v) is not None:
+                        trigger_parameter[k] = float(v)
+                    else:
+                        trigger_parameter[k] = v
+            trigger = None
+            if trigger_desc[0] == 'F':
+                trigger = {
+                    'type':'Fence',
+                    'parameter':{
+                        'vertex_type':{
+                            'x':trigger_parameter['vtx'] if 'vtx' in trigger_parameter else None,
+                            'y':trigger_parameter['vty'] if 'vty' in trigger_parameter else None,
+                        }
+                    }
+                }
+            elif trigger_desc[0] == 'E':
+                trigger = {
+                    'type':'Edge',
+                }
+            elif trigger_desc[0] == 'A':
+                trigger = {
+                    'type':'AttrFilter',
+                    'parameter':{
+                        'range':{
+                            'min':trigger_parameter['min'] if 'min' in trigger_parameter else None,
+                            'max':trigger_parameter['max'] if 'max' in trigger_parameter else None,
+                        }
+                    }
+                }
+            else:
+                continue
+            triggers.append(trigger)
+        nodes.append({
+            'name':re.findall('\((\w+?)\)', node_desc)[0],
+            'triggers':triggers,
+        })
+    return nodes
+
+def IEdit(
+    node_name:str,
+    trigger:dict,
+    all_update:bool
+)->dict:
+    if trigger['type'] == 'Fence':
+        vertex_type = trigger['parameter']['vertex_type']
+        if all_update or vertex_type['x'] is None:
+            console.print(f'[red bold][> Node-{node_name}][/] Please entering vertex type x ...')
+            default = vertex_type['x']
+            default_str = "" if default is None else f"([bold green]{default}[/])"
+            vertex_type['x'] = prompt(f'\[vertex_type of x  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
+        if all_update or vertex_type['y'] is None:
+            console.print(f'[red bold][> Node-{node_name}][/] Please entering vertex type y ...')
+            default = vertex_type['y']
+            default_str = "" if default is None else f"([bold green]{default}[/])"
+            vertex_type['y'] = prompt(f'\[vertex_type of y  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
+        console.print(f'[red bold][> Node{i}][/] Starting to label positions of virtual fence ...')
+        marks = uiMark(background, "Please label positions of virtual fence")
+        trigger['parameter']['position']=[{
+            'x':float(mark.center[0]),
+            'y':float(mark.center[1])
+        } for mark in marks]
+    elif trigger['type'] == 'Edge':
+        pass
+    elif trigger['type'] == 'AttrFilter':
+        attr_range = trigger['parameter']['range']
+        if all_update or attr_range['min'] is None:
+            console.print(f'[red bold][> Node-{node_name}][/] Please entering minimum of attribute filter ...')
+            default = attr_range['min']
+            default_str = "" if default is None else f"([bold green]{default}[/])"
+            attr_range['min'] = prompt(f'\[minimum of AttrFilter  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
+        if  all_update or attr_range['max'] is None:
+            console.print(f'[red bold][> Node-{node_name}][/] Please entering of attribute filter ...')
+            default = attr_range['max']
+            default_str = "" if default is None else f"([bold green]{default}[/])"
+            attr_range['max'] = prompt(f'\[maximum of AttrFilter  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
+    return trigger
+
 if __name__ == "__main__":
     # generate from https://patorjk.com/software/taag/
     # font is Crawford2
@@ -285,12 +372,17 @@ ______________________________________________________________________________
                 obj['BEV']['mapping']['viewH'] is not None
             ):
                 console.print(f'[>] Read BEV parameters from file:{targetName}.')
-            elif (
+            if (
                 obj['BEV']['mapping']['width'] is None or
                 obj['BEV']['mapping']['height'] is None
             ):
                 process_pipeline.append('mapWH')
-            else:
+            if (
+                obj['BEV']['mapping']['biasX'] is None or 
+                obj['BEV']['mapping']['biasY'] is None or
+                obj['BEV']['mapping']['viewW'] is None or
+                obj['BEV']['mapping']['viewH'] is None
+            ):
                 process_pipeline.append('view')
             process_pipeline.append('result')
 
@@ -310,14 +402,14 @@ ______________________________________________________________________________
                         'y':float(mark.center[1])
                     } for mark in marks]
                 elif process == 'mapWH':
-                    console.print('[>] Please type width ([bold red]P2-P3[/] & [bold red]P4-P1[/]) of this square mapping for...')
+                    console.print('[>] Please type width([bold red]P2-P3[/] & [bold red]P4-P1[/]) of this square mapping for...')
                     default = obj['BEV']['mapping']['width']
                     default_str = "" if default is None else f"([bold green]{default}[/])"
-                    obj['BEV']['mapping']['width'] = prompt(f'[mapping width  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
+                    obj['BEV']['mapping']['width'] = prompt(f'\[mapping width  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
                     console.print('[>] Please type height([bold red]P1-P2[/] & [bold red]P3-P4[/]) of this square mapping for...')
                     default = obj['BEV']['mapping']['height']
                     default_str = "" if default is None else f"([bold green]{default}[/])"
-                    obj['BEV']['mapping']['height'] = prompt(f'[mapping height  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
+                    obj['BEV']['mapping']['height'] = prompt(f'\[mapping height  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
                 elif process == 'view':
                     console.print(f'[>] Starting setting [bold red]perspective view area[/]...')
                     mapH, mapW = obj['BEV']['mapping']['height'], obj['BEV']['mapping']['width']
@@ -350,12 +442,12 @@ ______________________________________________________________________________
                     obj['BEV']['mapping']['biasY'] = 0 - ymin
                     obj['BEV']['mapping']['viewW'] = xmax - xmin
                     obj['BEV']['mapping']['viewH'] = ymax - ymin
+                    console.print(f'[>] Finish setting [bold red]perspective view area[/].')
                 elif process == 'result':
                     mapH, mapW = obj['BEV']['mapping']['height'], obj['BEV']['mapping']['width']
                     points = [(p['x'], p['y']) for p in obj['BEV']['position']]
                     points = np.asarray(points, dtype='float32')
                     biasX, biasY = obj['BEV']['mapping']['biasX'], obj['BEV']['mapping']['biasY']
-                    console.print(obj['BEV']['mapping'])
                     dstPtr = np.float32([
                         [biasX, biasY], [biasX, biasY+mapH],
                         [biasX+mapW, biasY+mapH], [biasX+mapW, biasY]]
@@ -375,60 +467,111 @@ ______________________________________________________________________________
                             process_pipeline.append('view')
                         process_pipeline.append('result')
 
-
-
-
-            # 由於同意場景的虛擬柵欄數量可能不一樣，需要先確認
-            print(f'\n[>] Starting setting fence parameter...')
-            print('[>] Please type amount of fence you want...')
-            default_str = f" ({len(obj['Fences'])})" if len(obj['Fences'])!=0 else ""
-            fence_amount = input(f'[amount <{default_str}] ')
-            fence_amount = int(fence_amount) if len(fence_amount)!=0 else len(obj['Fences'])
-            fence_idxs = list(obj['Fences'].keys()) if fence_amount==len(obj['Fences']) else None
-            for i in range(fence_amount):
-                print(f'[Fence {i+1}]')
-                default_str = f" ({fence_idxs[i]})" if fence_idxs is not None else ""
-                name = input(f'  ├───name{default_str} : ')
-                name = name if len(name)!=0 else fence_idxs[i]
-                print('  └───location : ')
-                predata = obj['Fences'][name] if name in obj['Fences'] else None
-                fence_marks = uiMark(background, f'Please label area of Fence {name}', default=predata)
-                for mark in fence_marks[:-1]:
-                    print(f'        ├─{mark.center}')
-                print(f'        └─{fence_marks[-1].center}')
-                obj['Fences'][name] = [{
-                                    'x':float(mark.center[0]),
-                                    'y':float(mark.center[1])
-                                } for mark in fence_marks]
-
-            # 系統中還存在一些閥值
-            print(f'\n[>] Starting setting threshold...')
-            print('[>] Please type amount of threshold you want...')
-            default_str = f" ({len(obj['Threshold'])})" if len(obj['Threshold'])!=0 else ""
-            threshold_amount = input(f'[amount <{default_str}] ')
-            threshold_amount = int(threshold_amount) if len(threshold_amount)!=0 else len(obj['Threshold'])
-            threshold_idxs = list(obj['Threshold'].keys()) if threshold_amount==len(obj['Threshold']) else None
-            for i in range(threshold_amount):
-                print(f'[Threshold {i+1}]')
-                default_str = f" ({threshold_idxs[i]})" if threshold_idxs is not None else ""
-                name = input(f'  ├───name{default_str} : ')
-                name = name if len(name)!=0 else threshold_idxs[i]
-                default_value = obj['Threshold'][name] if name in obj['Threshold'] else None
-                default_value = ':'.join(map(str,default_value)) if isinstance(default_value, list) else default_value
-                default_str = f" ({default_value})" if default_value is not None else ""
-                value = input(f'  └───value{default_str} : ')
-                if len(value)!=0:
-                    if re.match("\d+\.?\d*:\d+\.?\d*", value) is not None:
-                        value = value.split(':')
-                        value = [float(v) for v in value]
-                        value.sort()
-                    elif re.match("\d+\.\d*", value) is not None:
-                        value = float(value)
+            if (
+                len(obj['trigger_description']['collector']) > 0 or
+                len(obj['trigger_description']['base']) > 0
+            ):
+                console.print(f'[>] Read trigger description from file:{targetName}')
+            else:
+                process_pipeline.append('pre_check')
+            if (
+                obj['trigger_description']['threshold']['target'] is not None and
+                obj['trigger_description']['threshold']['nonTarget'] is not None and
+                obj['trigger_description']['threshold']['waiting'] is not None
+            ):
+                console.print(f'[>] Read event threshold from file:{targetName}')
+            else:
+                process_pipeline.append('threshold')
+            process_pipeline.append('result')
+            console.print(f'\n[>] [bold]Following operation will modify the event filter model.[/]')
+            while len(process_pipeline) > 0:
+                process = process_pipeline.popleft()
+                if process == 'pre_check':
+                    reg1 = '^\d*$'
+                    name_reg = '\(\w+\)'
+                    trigger_desc_reg = '(?:F|E|A)(?:{.*?})?'
+                    trigger_reg = f'((?:{name_reg})(?:{trigger_desc_reg})+);?'
+                    reg2 = f'({trigger_reg})+'
+                    reg = f'({reg1})|({reg2})'
+                    re.findall(reg2, '(name)F{vtx=1.0, vty=1.0}>>F{vtx=1.0, vty=1.0}')
+                    for target in ["collector", "base"]:
+                        console.print(f'[>] Please type amount of {target} node you want...')
+                        value = prompt(f'\[{target} <] ', reg=reg, parser=lambda x:int(x) if re.match(reg1, x) is not None else x)
+                        if isinstance(value, int):
+                            for i in range(value):
+                                console.print(f'[>] Please type name of [red bold]Node{i}[/]...')
+                                name = prompt(f'\[name  <] ')
+                                triggers = []
+                                while True:
+                                    enter = prompt(f'[>] Which type of trigger you want?', default=None, choice=['Fence', 'Edge', 'AttrFilter', 'exit'])
+                                    if enter == 'Fence':
+                                        trigger = {
+                                            'type':'Fence',
+                                            'parameter':{
+                                                'vertex_type':{
+                                                    'x':None,
+                                                    'y':None,
+                                                }
+                                            }
+                                        }
+                                    elif enter == 'Edge':
+                                        trigger = {
+                                            'type':'Edge',
+                                        }
+                                    elif enter == 'AttrFilter':
+                                        trigger = {
+                                            'type':'AttrFilter',
+                                            'parameter':{
+                                                'range':{
+                                                    'min':None,
+                                                    'max':None,
+                                                }
+                                            }
+                                        }
+                                    elif enter == "exit":
+                                        console.print('[red bold][> Node-{name}][/] Finish!')
+                                        break
+                                    triggers.append(IEdit(name, trigger, all_update=False))
+                                obj['trigger_description'][target].append({
+                                    'name':name,
+                                    'triggers':triggers,
+                                })
+                        else:
+                            console.print(value)
+                            nodes_desc = re.findall(trigger_reg, value)
+                            nodes = OEDparse(nodes_desc)                    
+                            console.print(f'[yellow bold]Parse {len(nodes)} nodes for {target} from OED.')
+                            for i, node in enumerate(nodes):
+                                if node['name'] is None:
+                                    console.print(f'[>] Please type name of [red bold]Node{i}[/]...')
+                                    node['name'] = prompt(f'[name  <] ')
+                                for trigger in node['triggers']:
+                                    trigger = IEdit(node['name'], trigger, all_update=False)
+                                console.print(f'[green bold][>] OED for Node-{node["name"]} accept.')
+                            obj['trigger_description'][target] = nodes
+                elif process == 'threshold':
+                    threshold = obj['trigger_description']['threshold']
+                    for kind in ['target', 'nonTarget', 'waiting']:
+                        console.print(f'[>] Please enter limited [bold red]{kind}[/] time(s)...')
+                        default = threshold[kind]
+                        default_str = "" if default is None else f"([bold green]{default}[/])"
+                        threshold[kind] = prompt(f'\[{kind} time(s)  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
+                elif process == "event":
+                    endpoint_str = prompt(f'\[endpoint  <] ', default='collector', choice=['collector', 'base'])
+                    endpoint = obj['trigger_description'][endpoint_str]
+                    nodes_name = [node['name'] for node in endpoint]
+                    node_str = prompt(f'\[node  <] ', default=nodes_name[0], choice=nodes_name)
+                    node_idx = nodes_name.index(node_str)
+                    node = endpoint[node_idx]
+                    for trigger in node['triggers']:
+                        trigger = IEdit(node_str, trigger, all_update=True)
+                elif process == 'result':
+                    then = prompt(f'[>] Edit again?', default='No', choice=['event', 'threshold', 'No'])
+                    if then == 'No':
+                        break
                     else:
-                        value = int(value)
-                else:
-                    value = obj['Threshold'][name]
-                obj['Threshold'][name] = value
+                        process_pipeline.append(then)
+                        process_pipeline.append('result')
             
             with open(confName, 'w') as outfile:
-                yaml.dump(obj, outfile, default_flow_style=False)
+                yaml.dump(obj, outfile, default_flow_style=False, sort_keys=False)

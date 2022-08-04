@@ -212,12 +212,13 @@ def OEDparse(OED:str)->list:
     nodes = []
     for node_desc in OED:
         triggers = []
-        for trigger_desc in node_desc:
+        triggers_desc = re.findall('(?:F|E|A)(?:{.*?})?', node_desc)
+        for trigger_desc in triggers_desc:
             trigger_parameter =  dict()
             if len(trigger_desc) > 3:
                 pstring = re.split(',\s?', trigger_desc[2:-1])
                 kv = [re.split('\s?=\s?', p) for p in pstring]
-                for i, k, v in enumerate(kv):
+                for i, (k, v) in enumerate(kv):
                     if re.match('^((-|\+)?\d+(\.\d*)?)$', v) is not None:
                         trigger_parameter[k] = float(v)
                     else:

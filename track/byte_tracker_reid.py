@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 
 from tracker.kalman_filter import KalmanFilter
-from tracker import matching
+from . import matching
 from tracker.basetrack import BaseTrack, TrackState
 
 class STrack(BaseTrack):
@@ -26,19 +26,14 @@ class STrack(BaseTrack):
         # reid use
         self.score_list = []
         self.smooth_feat = None
-        self.update_features(feat)
         self.features = deque([], maxlen=feat_buffer_size)
-        self.alpha = 0.9
+        self.update_features(feat)
+
     # reid use
     def update_features(self, feat):
         feat /= np.linalg.norm(feat)
         self.curr_feat = feat
-        if self.smooth_feat is None:
-            self.smooth_feat = feat
-        else:
-            self.smooth_feat = self.alpha * self.smooth_feat + (1 - self.alpha) * feat
         self.features.append(feat)
-        self.smooth_feat /= np.linalg.norm(self.smooth_feat)
     
     def predict(self):
         mean_state = self.mean.copy()

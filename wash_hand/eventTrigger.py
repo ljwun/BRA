@@ -17,6 +17,7 @@ class EventFilter:
         configStream = open(configPath, 'r')
         self.config = yaml.safe_load(configStream)
         configStream.close()
+        self.trigger_desc = self.config['trigger_description']
         # ===============================================================
         self.collector = []
         self.analyst_table = pd.DataFrame(columns=['targetCounter', 'nonTargetCounter'])
@@ -24,11 +25,11 @@ class EventFilter:
         self.tracer_table = pd.DataFrame(columns=['type', 'deathCounter'])
         self.tracer_life = round(record_life * fps)
         # ===============================================================
-        self.targetThreshold = round(self.config['Threshold']['target'] * fps)
-        self.nonTargetThreshold = round(self.config['Threshold']['nonTarget'] * fps)
-        self.waitingThreshold = round(self.config['Threshold']['waiting'] * fps)
+        self.targetThreshold = round(self.trigger_desc['threshold']['target'] * fps)
+        self.nonTargetThreshold = round(self.trigger_desc['threshold']['nonTarget'] * fps)
+        self.waitingThreshold = round(self.trigger_desc['threshold']['waiting'] * fps)
         # ===============================================================
-        self.deserialize(self.config['trigger_description'])
+        self.deserialize(self.trigger_desc)
 
     def work(self, inputs):
         # inputs are list of object data with its properties
@@ -191,29 +192,30 @@ class EventFilter:
                 color = (255, 153, 255)
                 text = f"clean={self.analyst_table.loc[tID, 'targetCounter']}"
             cv2.rectangle(frame, box[0:2], box[2:4], color=color, thickness=3)
-            cv2.putText(frame, f'{tID}|{text}|{w/h:.3f}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 3, color, thickness=3)
+            cv2.putText(frame, f'{tID}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 3, color, thickness=3)
 
     def __parseTrigger(self, node_description):
-        trigger = []
-        for line in node_description:
-            if line['type'] == 'Fence':
-                trigger.append(
+        triggers = []
+        triggers_desc = node_description['triggers']
+        for trigger in triggers_desc:
+            if trigger['type'] == 'Fence':
+                triggers.append(
                     self.__virtualFence(
-                        line['parameter']['vertex_type'], 
-                        line['parameter']['positions']
+                        trigger['parameter']['vertex_type'], 
+                        trigger['parameter']['position']
                     )
                 )
-            elif line['type'] == 'Edge':
-                trigger.append(
+            elif trigger['type'] == 'Edge':
+                triggers.append(
                     self.__edgeTrigger()
                 )
-            elif line['type'] == 'AttrFilter':
-                trigger.append(
+            elif trigger['type'] == 'AttrFilter':
+                triggers.append(
                     self.__checkAttr(
-                        line['parameter']['range']
+                        trigger['parameter']['range']
                     )
                 )
-        return TriggerNode(trigger)
+        return TriggerNode(triggers)
 
     def deserialize(self, trigger_description):
         collector_description = trigger_description['collector']

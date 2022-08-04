@@ -274,7 +274,7 @@ def IEdit(
             default = vertex_type['y']
             default_str = "" if default is None else f"([bold green]{default}[/])"
             vertex_type['y'] = prompt(f'\[vertex_type of y  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
-        console.print(f'[red bold][> Node{i}][/] Starting to label positions of virtual fence ...')
+        console.print(f'[red bold][> Node-{node_name}][/] Starting to label positions of virtual fence ...')
         marks = uiMark(background, "Please label positions of virtual fence")
         trigger['parameter']['position']=[{
             'x':float(mark.center[0]),
@@ -439,10 +439,10 @@ ______________________________________________________________________________
                     maxXY, minXY = np.amax(corners, axis=0), np.amin(corners, axis=0)
                     xmin, xmax = minXY[0], maxXY[0]
                     ymin, ymax = minXY[1], maxXY[1]
-                    obj['BEV']['mapping']['biasX'] = 0 - xmin
-                    obj['BEV']['mapping']['biasY'] = 0 - ymin
-                    obj['BEV']['mapping']['viewW'] = xmax - xmin
-                    obj['BEV']['mapping']['viewH'] = ymax - ymin
+                    obj['BEV']['mapping']['biasX'] = int(0 - xmin)
+                    obj['BEV']['mapping']['biasY'] = int(0 - ymin)
+                    obj['BEV']['mapping']['viewW'] = int(xmax - xmin)
+                    obj['BEV']['mapping']['viewH'] = int(ymax - ymin)
                     console.print(f'[>] Finish setting [bold red]perspective view area[/].')
                 elif process == 'result':
                     mapH, mapW = obj['BEV']['mapping']['height'], obj['BEV']['mapping']['width']

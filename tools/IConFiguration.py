@@ -234,6 +234,8 @@ def OEDparse(OED:str)->list:
                         }
                     }
                 }
+                if 'relay' in trigger_parameter:
+                    trigger['parameter']['relay_ext'] = trigger_parameter['relay']
             elif trigger_desc[0] == 'E':
                 trigger = {
                     'type':'Edge',

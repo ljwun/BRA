@@ -1,7 +1,9 @@
 import pandas as pd
 import yaml
+import numpy as np
 from numpy import isnan
 import cv2
+from shapely.geometry import MultiPoint
 
 class TriggerNode:
     def __init__(self, triggers):
@@ -107,7 +109,7 @@ class EventFilter:
 
         return nonTargetIds, wrongTargetIds, correctTargetIds, c_result, b_result
 
-    def __virtualFence(self, vertex_type, fence, fn=None):
+    def __virtualFence(self, vertex_type, fence, relay_ext=None):
         '''
         We apply Point in Polygon Strategies to check whether
         a single vertex is in specified range or not.
@@ -117,7 +119,17 @@ class EventFilter:
                       (1,1)->right bottom
                       (1,0)->right top
         '''
+        relay = []
+        if relay_ext is not None:
+            fence_zone = [(p['x'], p['y']) for p in fence]
+            centroid = MultiPoint(fence_zone).convex_hull.centroid
+            cx, cy = centroid.x, centroid.y
+            out_vector = np.asarray([(p['x']-cx, p['y']-cy)for p in fence])
+            out_vector = out_vector / np.linalg.norm(out_vector, axis=1, keepdims=True) * relay_ext
+            buffer_zone = np.asarray(fence_zone) + out_vector
+            buffer_zone = [{'x':xy[0], 'y':xy[1]} for xy in buffer_zone]
         def instanceFence(objs, filtered_result):
+            nonlocal relay
             result = []
             for obj, tag in zip(objs, filtered_result):
                 if tag:
@@ -125,9 +137,15 @@ class EventFilter:
                         'x':obj.tlwh[0]+vertex_type['x']*obj.tlwh[2], 
                         'y':obj.tlwh[1]+vertex_type['y']*obj.tlwh[3]
                     }
-                    result.append(windingNumber(p, fence) != 0)
-                else:
-                    result.append(False)
+                    tag = windingNumber(p, fence) != 0
+                if (
+                    relay_ext is not None and 
+                    not tag and
+                    obj.track_id in relay
+                ):
+                    tag = windingNumber(p, buffer_zone) != 0
+                result.append(tag)
+            relay = [obj.track_id for tag in result if tag]
             return result
         return instanceFence
 
@@ -147,7 +165,7 @@ class EventFilter:
             return result
         return instanceEdgeTrigger
 
-    def __checkAttr(self, thres, fn=None):
+    def __checkAttr(self, thres):
         def instanceCheck(objs, filtered_result):
             result = []
             for obj, tag in zip(objs, filtered_result):
@@ -177,7 +195,7 @@ class EventFilter:
                 color = (255, 255, 255)
                 text = 'OK'
             cv2.rectangle(frame, box[0:2], box[2:4], color=color, thickness=5)
-            cv2.putText(frame, f'{text}|{tID}|{w/h:.3f}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 5, color, thickness=3)
+            cv2.putText(frame, f'{tID}', (box[0], box[1]), cv2.FONT_HERSHEY_PLAIN, 5, color, thickness=3)
 
         for target in online_persons:
             tID = target.track_id
@@ -199,10 +217,14 @@ class EventFilter:
         triggers_desc = node_description['triggers']
         for trigger in triggers_desc:
             if trigger['type'] == 'Fence':
+                relay_ext = None
+                if 'relay_ext' in trigger['parameter']:
+                    relay_ext = trigger['parameter']['relay_ext']
                 triggers.append(
                     self.__virtualFence(
                         trigger['parameter']['vertex_type'], 
-                        trigger['parameter']['position']
+                        trigger['parameter']['position'],
+                        relay_ext=relay_ext
                     )
                 )
             elif trigger['type'] == 'Edge':

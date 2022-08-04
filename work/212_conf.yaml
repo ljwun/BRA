@@ -35,6 +35,7 @@ trigger_description:
     triggers:
     - type: Fence
       parameter:
+        relay_ext: 50
         vertex_type:
           x: 1.0
           y: 1.0
@@ -56,6 +57,7 @@ trigger_description:
     triggers:
     - type: Fence
       parameter:
+        relay_ext: 50
         vertex_type:
           x: 1.0
           y: 1.0
@@ -78,6 +80,7 @@ trigger_description:
     triggers:
     - type: Fence
       parameter:
+        relay_ext: 50
         vertex_type:
           x: 0.0
           y: 1.0

@@ -23,6 +23,7 @@ console = Console()
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 from distance.mapping import Mapper
+from wash_hand import Polygon_Extension
 
 def make_parser():
     parser = argparse.ArgumentParser("pre/re-configure BRA system")
@@ -33,9 +34,15 @@ def make_parser():
     action.add_argument("-v", "--visualize", action="store_true", help="view the visualize setting")
     return parser
 
-def onclick(marks, mark_info, polygon, polygon_info, texts, ax, base_scale = 1, ex_fn=None):
+def onclick(marks, mark_info, polygon, polygon_info, texts, ax, base_scale = 1, ex_fn=None, ext=None):
     def fn(event):
         if event.dblclick and event.button is MouseButton.LEFT:
+            if polygon[0] is not None:
+                polygon[0].remove()
+                polygon[0] = None
+            if polygon[1] is not None:
+                polygon[1].remove()
+                polygon[1] = None
             ix, iy = event.xdata, event.ydata
             if ix != None or iy != None:
                 circle = Circle((ix, iy), mark_info['size'], color=mark_info['color'], alpha=mark_info['alpha'])
@@ -47,37 +54,51 @@ def onclick(marks, mark_info, polygon, polygon_info, texts, ax, base_scale = 1, 
                 marks.append(circle)
                 texts.append(text)
                 if len(marks) >= 3:
-                    if len(polygon) > 0:
-                        polygon.pop().remove()
-                    polygon.append(
-                        Polygon(
-                            [circle.center for circle in marks],
-                            color=polygon_info['color'], 
-                            alpha=polygon_info['alpha'],
-                            zorder=polygon_info['zorder']
-                        )
+                    polygon[0] = Polygon(
+                        [circle.center for circle in marks],
+                        color=polygon_info[0]['color'], 
+                        alpha=polygon_info[0]['alpha'],
+                        zorder=polygon_info[0]['zorder']
                     )
                     ax.add_patch(polygon[0])
+                    if ext is not None and ext > 0:
+                        ext_marks = Polygon_Extension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
+                        polygon[1] = Polygon(
+                            [(p['x'], p['y']) for p in ext_marks],
+                            color=polygon_info[1]['color'], 
+                            alpha=polygon_info[1]['alpha'],
+                            zorder=polygon_info[1]['zorder']
+                        )
+                        ax.add_patch(polygon[1])
         elif event.button is MouseButton.RIGHT:
             if len(marks) > 0:
                 circle = marks.pop(-1)
                 circle.remove()
                 text = texts.pop(-1)
                 text.remove()
-            if len(marks) < 3 and len(polygon) > 0:
-                polygon.pop().remove()
-            elif len(marks) >= 3:
-                if len(polygon) > 0:
-                    polygon.pop().remove()
-                polygon.append(
-                    Polygon(
-                        [circle.center for circle in marks],
-                        color=polygon_info['color'], 
-                        alpha=polygon_info['alpha'],
-                        zorder=polygon_info['zorder']
-                    )
+            if polygon[0] is not None:
+                polygon[0].remove()
+                polygon[0] = None
+            if polygon[1] is not None:
+                polygon[1].remove()
+                polygon[1] = None
+            if len(marks) >= 3:
+                polygon[0] = Polygon(
+                    [circle.center for circle in marks],
+                    color=polygon_info[0]['color'], 
+                    alpha=polygon_info[0]['alpha'],
+                    zorder=polygon_info[0]['zorder']
                 )
                 ax.add_patch(polygon[0])
+                if ext is not None and ext > 0:
+                    ext_marks = Polygon_Extension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
+                    polygon[1] = Polygon(
+                        [(p['x'], p['y']) for p in ext_marks],
+                        color=polygon_info[1]['color'], 
+                        alpha=polygon_info[1]['alpha'],
+                        zorder=polygon_info[1]['zorder']
+                    )
+                    ax.add_patch(polygon[1])
         plt.draw()
         if ex_fn is not None:
             ex_fn(marks, texts, ax, base_scale)
@@ -113,22 +134,29 @@ def onscroll(ax, marks, mark_info, base_scale = 2):
         plt.draw()
     return fn
 
-def uiMark(background, title, default=None, fn=None):
+def uiMark(background, title, default=None, fn=None, ext=None):
     size = (background.size[0] + background.size[1]) * 0.001
     fig, ax = plt.subplots(1)
     marks = []
-    polygon = []
+    polygon = [None, None]
     texts=[]
     mark_info = {
         'size': 7*size,
         'color': 'red',
         'alpha': 0.6
         }
-    polygon_info = {
-        'color': 'green',
-        'alpha': 0.4,
-        'zorder':0.8,
-    }
+    polygon_info = [
+        {
+            'color': 'green',
+            'alpha': 0.4,
+            'zorder':0.8,
+        },
+        {
+            'color': 'red',
+            'alpha': 0.3,
+            'zorder':0.7,
+        }
+    ]
     # 載入現有資料
     if default is not None:
         for p in default:
@@ -141,18 +169,25 @@ def uiMark(background, title, default=None, fn=None):
             marks.append(circle)
             texts.append(text)
         if len(marks) > 3:
-            polygon.append(
-                Polygon(
-                    [circle.center for circle in marks],
-                    color=polygon_info['color'], 
-                    alpha=polygon_info['alpha'],
-                    zorder=polygon_info['zorder']
-                )
+            polygon[0] = Polygon(
+                [circle.center for circle in marks],
+                color=polygon_info[0]['color'], 
+                alpha=polygon_info[0]['alpha'],
+                zorder=polygon_info[0]['zorder']
             )
             ax.add_patch(polygon[0])
+            if ext is not None and ext > 0:
+                ext_marks = Polygon_Extension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
+                polygon[1] = Polygon(
+                    [(p['x'], p['y']) for p in ext_marks],
+                    color=polygon_info[1]['color'], 
+                    alpha=polygon_info[1]['alpha'],
+                    zorder=polygon_info[1]['zorder']
+                )
+                ax.add_patch(polygon[1])
     ax.imshow(background)
     plt.connect('scroll_event', onscroll(ax, marks, mark_info))
-    plt.connect('button_press_event', onclick(marks, mark_info, polygon, polygon_info, texts, ax, size, ex_fn=fn))
+    plt.connect('button_press_event', onclick(marks, mark_info, polygon, polygon_info, texts, ax, size, ex_fn=fn, ext=ext))
     plt.title(label=title, fontweight=40)
     plt.show()
     return marks
@@ -276,8 +311,18 @@ def IEdit(
             default = vertex_type['y']
             default_str = "" if default is None else f"([bold green]{default}[/])"
             vertex_type['y'] = prompt(f'\[vertex_type of y  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
+        if all_update or 'relay_ext' not in trigger['parameter']:
+            console.print(f'[red bold][> Node-{node_name}][/] Need enable relay moode ?')
+            default = "No" if 'relay_ext' not in trigger['parameter'] else "Yes"
+            default_str = f"([bold green]{default}[/])"
+            enable = prompt(f'\[[red bold]relay mode]  <{default_str}] ', default=default, choice=["Yes", "No"])
+            if enable=='Yes':
+                default = trigger['parameter']['relay_ext'] if 'relay_ext' in trigger['parameter'] else None
+                default_str = "" if default is None else f"([bold green]{default}[/])"
+                trigger['parameter']['relay_ext'] = prompt(f'\[extension pixels  <{default_str}] ', default=default, reg='^\d*$', parser=lambda x:int(x))
+        ext = trigger['parameter']['relay_ext'] if 'relay_ext' in trigger['parameter'] else None
         console.print(f'[red bold][> Node-{node_name}][/] Starting to label positions of virtual fence ...')
-        marks = uiMark(background, "Please label positions of virtual fence")
+        marks = uiMark(background, "Please label positions of virtual fence", default=trigger['parameter']['position'], ext=ext)
         trigger['parameter']['position']=[{
             'x':float(mark.center[0]),
             'y':float(mark.center[1])

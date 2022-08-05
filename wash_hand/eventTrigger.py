@@ -5,6 +5,15 @@ from numpy import isnan
 import cv2
 from shapely.geometry import MultiPoint
 
+def Polygon_Extension(xys, ext_pixel):
+    ori_zone = [(p['x'], p['y']) for p in xys]
+    centroid = MultiPoint(ori_zone).convex_hull.centroid
+    cx, cy = centroid.x, centroid.y
+    out_vector = np.asarray([(p['x']-cx, p['y']-cy)for p in xys])
+    out_vector = out_vector / np.linalg.norm(out_vector, axis=1, keepdims=True) * ext_pixel
+    ext_zone = np.asarray(ori_zone) + out_vector
+    return [{'x':xy[0], 'y':xy[1]} for xy in ext_zone]
+
 class TriggerNode:
     def __init__(self, triggers):
         self.triggerList = triggers
@@ -121,13 +130,7 @@ class EventFilter:
         '''
         relay = []
         if relay_ext is not None:
-            fence_zone = [(p['x'], p['y']) for p in fence]
-            centroid = MultiPoint(fence_zone).convex_hull.centroid
-            cx, cy = centroid.x, centroid.y
-            out_vector = np.asarray([(p['x']-cx, p['y']-cy)for p in fence])
-            out_vector = out_vector / np.linalg.norm(out_vector, axis=1, keepdims=True) * relay_ext
-            buffer_zone = np.asarray(fence_zone) + out_vector
-            buffer_zone = [{'x':xy[0], 'y':xy[1]} for xy in buffer_zone]
+            buffer_zone = Polygon_Extension(fence, relay_ext)
         def instanceFence(objs, filtered_result):
             nonlocal relay
             result = []

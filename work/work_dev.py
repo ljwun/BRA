@@ -6,9 +6,27 @@ import numpy as np
 import subprocess
 import time
 import re
+import math
 import importlib
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
+
+def regex_time_second(arg_value):
+    pattern = '^(\d*):(\d*):(\d*)(\.\d+)?$'
+    group = re.findall(pattern, arg_value)
+    if re.match("^\d+$", arg_value) is not None:
+        return int(arg_value)
+    elif len(group) == 0:
+        raise argparse.ArgumentTypeError("invalid value")
+    group = group[0]
+    second = 0
+    for v in group[:-1]:
+        second *= 60
+        if len(v)!=0:
+            second += int(v)
+    if len(group[-1]) > 1:
+        return second + float(group[-1])
+    return second
 
 def make_parser():
     parser = argparse.ArgumentParser("simple block work flow")
@@ -23,8 +41,15 @@ def make_parser():
         help="YAML format configuration to worker"
     )
     parser.add_argument(
+        "-ss", "--start_second",
+        type=regex_time_second,
+        default=None,
+        help="start second from input video "
+    )
+    parser.add_argument(
         "-d", "--duration",
-        type=int, default=None,
+        type=regex_time_second, 
+        default=None,
         help="stop after duration(s)"
     )
     parser.add_argument(
@@ -126,13 +151,15 @@ if __name__ == "__main__":
         framerate = args.fps
         print(f'framerate is : {framerate}')
     frame_limit = None if args.duration is None else round(args.duration * framerate) 
+    start_frame = math.floor(args.start_second*framerate) if args.start_second is not None else None
 
     Worker = importlib.import_module(args.worker_file).Worker
     worker = Worker(
         args.video_input,
         args.config, track_parameter,
         actual_framerate = framerate,
-        reid=args.reid
+        reid=args.reid,
+        start_frame = start_frame
     )
 
     source_size = (

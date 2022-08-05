@@ -31,7 +31,8 @@ class Worker(BaseWorker):
         metrics_duration=600,
         metrics_update_time=5,
         actual_framerate=None,
-        reid=False
+        reid=False,
+        start_frame=None
     ):
         super().__init__()
         self.cap = cv2.VideoCapture(vin_path)
@@ -43,6 +44,9 @@ class Worker(BaseWorker):
         self.frameID = 0
         self.retval = True
         self.reid = reid
+        if start_frame is not None:
+            for _ in range(start_frame):
+                self.cap.read()
 
         self.MDetector = MaskChecker("cuda:0", 'm', 'New_FMD_m1k.pth')
         self.PDetector = Detector('m', 0, True, True)
@@ -74,7 +78,7 @@ class Worker(BaseWorker):
     def _workFlow(self):
         # [LEVEL_0_BLOCK]
         _, frame = self.cap.retrieve()
-        
+
         # [LEVEL_1_BLOCK] === INPUT -> frame
         person_outputs, person_info = self.PDetector.detect(frame)
         mask_outputs, mask_info = self.MDetector.detect(frame)
@@ -138,7 +142,7 @@ class Worker(BaseWorker):
 
         # [LEVEL_6_BLOCK] === INPUT -> assessment
         avg_distance = total_distance / total_edge_num if total_edge_num != 0 else 0
-        with_mask_ratio = len(with_mask) / mask_len if mask_len != 0 else 0
+        with_mask_ratio = len(with_mask) / mask_len if mask_len != 0 else 1.0
         texts = [
             f'Real-time',
             f'Person Count: {len(online_persons):d}',

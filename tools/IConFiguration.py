@@ -247,7 +247,8 @@ def OEDparse(OED:str)->list:
     nodes = []
     for node_desc in OED:
         triggers = []
-        triggers_desc = re.findall('(?:F|E|A)(?:{.*?})?', node_desc)
+        name_pos_end=re.match('\((\w+?)\)', node_desc).span()[1]
+        triggers_desc = re.findall('(?:F|E|A)(?:{.*?})?', node_desc[name_pos_end:])
         for trigger_desc in triggers_desc:
             trigger_parameter =  dict()
             if len(trigger_desc) > 3:
@@ -266,7 +267,8 @@ def OEDparse(OED:str)->list:
                         'vertex_type':{
                             'x':trigger_parameter['vtx'] if 'vtx' in trigger_parameter else None,
                             'y':trigger_parameter['vty'] if 'vty' in trigger_parameter else None,
-                        }
+                        },
+                        'position':None
                     }
                 }
                 if 'relay' in trigger_parameter:
@@ -319,7 +321,7 @@ def IEdit(
             if enable=='Yes':
                 default = trigger['parameter']['relay_ext'] if 'relay_ext' in trigger['parameter'] else None
                 default_str = "" if default is None else f"([bold green]{default}[/])"
-                trigger['parameter']['relay_ext'] = prompt(f'\[extension pixels  <{default_str}] ', default=default, reg='^\d*$', parser=lambda x:int(x))
+                trigger['parameter']['relay_ext'] = prompt(f'\[extension pixels  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
         ext = trigger['parameter']['relay_ext'] if 'relay_ext' in trigger['parameter'] else None
         console.print(f'[red bold][> Node-{node_name}][/] Starting to label positions of virtual fence ...')
         marks = uiMark(background, "Please label positions of virtual fence", default=trigger['parameter']['position'], ext=ext)
@@ -559,7 +561,8 @@ ______________________________________________________________________________
                                                 'vertex_type':{
                                                     'x':None,
                                                     'y':None,
-                                                }
+                                                },
+                                                'position':None
                                             }
                                         }
                                     elif enter == 'Edge':
@@ -603,7 +606,7 @@ ______________________________________________________________________________
                         console.print(f'[>] Please enter limited [bold red]{kind}[/] time(s)...')
                         default = threshold[kind]
                         default_str = "" if default is None else f"([bold green]{default}[/])"
-                        threshold[kind] = prompt(f'\[{kind} time(s)  <{default_str}] ', default=default, reg="^\d*$", parser=lambda x:int(x))
+                        threshold[kind] = prompt(f'\[{kind} time(s)  <{default_str}] ', default=default, reg='^((-|\+)?\d+(\.\d*)?)$', parser=lambda x:float(x))
                 elif process == "event":
                     endpoint_str = prompt(f'\[endpoint  <] ', default='collector', choice=['collector', 'base'])
                     endpoint = obj['trigger_description'][endpoint_str]

@@ -52,35 +52,40 @@ class Detector:
         self.means = (0.485, 0.456, 0.406)
         self.std = (0.229, 0.224, 0.225)
     
-    def detect(self, img):
-        img_info = dict()
-        height, width = img.shape[:2]
-        img_info["height"] = height
-        img_info["width"] = width
-        img_info["raw"] = img
+    def detect(self, imgs):
+        if not isinstance(imgs, list):
+            imgs = [imgs]
+        imgs_info = [{
+            "height":img.shape[0],
+            "width":img.shape[1],
+            "raw":img,
+            "ratio":min(
+                self.test_size[0] / img.shape[0], 
+                self.test_size[1] / img.shape[1]
+            )
+        } for img in imgs]
 
-        img, ratio = self.__preproc(img, self.test_size, self.means, self.std)
-        img_info["ratio"] = ratio
-        img = torch.from_numpy(img).unsqueeze(0).float().to(self.device)
+        imgs = [self.__preproc(img) for img in imgs]
+        imgs = np.array(imgs)
+        imgs = torch.from_numpy(imgs).float().to(self.device)
         if self.fp16:
-            img = img.half()
-        
+            imgs = imgs.half()
+
         with torch.no_grad():
-            t0 = time.time()
-            outputs = self.model(img)
+            outputs = self.model(imgs)
             outputs = postprocess(
                 outputs, self.num_classes, self.confthre, self.nmsthre
             )
-            logger.info("Infer time: {:.4f}s".format(time.time() - t0))
-        return outputs, img_info
 
-    def __preproc(self, image, input_size, mean, std, swap=(2, 0, 1)):
+        return outputs, imgs_info
+
+    def __preproc(self, image, swap=(2, 0, 1)):
         if len(image.shape) == 3:
-            padded_img = np.ones((input_size[0], input_size[1], 3)) * 114.0
+            padded_img = np.ones((self.test_size[0], self.test_size[1], 3)) * 114.0
         else:
-            padded_img = np.ones(input_size) * 114.0
+            padded_img = np.ones(self.test_size) * 114.0
         img = np.array(image)
-        r = min(input_size[0] / img.shape[0], input_size[1] / img.shape[1])
+        r = min(self.test_size[0] / img.shape[0], self.test_size[1] / img.shape[1])
         resized_img = cv2.resize(
             img,
             (int(img.shape[1] * r), int(img.shape[0] * r)),
@@ -90,10 +95,10 @@ class Detector:
 
         padded_img = padded_img[:, :, ::-1]
         padded_img /= 255.0
-        if mean is not None:
-            padded_img -= mean
-        if std is not None:
-            padded_img /= std
+        if self.means is not None:
+            padded_img -= self.means
+        if self.std is not None:
+            padded_img /= self.std
         padded_img = padded_img.transpose(swap)
         padded_img = np.ascontiguousarray(padded_img, dtype=np.float32)
-        return padded_img, r
+        return padded_img

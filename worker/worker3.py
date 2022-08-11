@@ -90,14 +90,14 @@ class Worker(BaseWorker):
                 feats = self.appearanceExtractor.extract_with_crop(frame, person_outputs[0], 0.1)
                 online_persons = self.byteTracker.update(
                     person_outputs[0], 
-                    [person_info['height'], person_info['width']], 
+                    [person_info[0]['height'], person_info[0]['width']], 
                     self.PDetector.test_size,
                     feats
                 )
             else:
                 online_persons = self.byteTracker.update(
                     person_outputs[0], 
-                    [person_info['height'], person_info['width']], 
+                    [person_info[0]['height'], person_info[0]['width']], 
                     self.PDetector.test_size
                 )
         with_mask, without_mask = [], []
@@ -147,7 +147,7 @@ class Worker(BaseWorker):
             f'Real-time',
             f'Person Count: {len(online_persons):d}',
             f'Average Distance: {avg_distance / 100:.2f} m',
-            f'Mask Check: {with_mask_ratio * 100:.2f}%',
+            f'Mask Check: {with_mask_ratio * 100:.2f}% ({mask_len})',
         ]
         cmb.VISBlockText(
             frame,

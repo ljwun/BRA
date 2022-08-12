@@ -1,7 +1,8 @@
 argparse==1.4.0
 Cython==0.29.30
 git+https://github.com/YyuK-Liao/cython_bbox.git#egg=cython-bbox
-lap==0.4.0
+# lap==0.4.0
+git+https://github.com/assafmus/lap.git#egg=lap
 loguru==0.6.0
 numpy==1.23.1
 opencv-python==4.5.5.64

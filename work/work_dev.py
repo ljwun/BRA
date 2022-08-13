@@ -291,9 +291,11 @@ if __name__ == "__main__":
         if args.video_output is not None:
             vwriter_logFile.close()
         if ffmpeg_process is not None:
-            ffmpeg_process.terminate()
+            ffmpeg_process.stdin.close()
+            ffmpeg_process.wait()
         if vwriter_process is not None:
-            vwriter_process.terminate()
+            vwriter_process.stdin.close()
+            vwriter_process.wait()
         if args.write_to_csv is not None:
             result_table = worker.GetResultTable()
             if result_table is not None:

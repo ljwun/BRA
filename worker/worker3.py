@@ -3,6 +3,8 @@ import sys
 import cv2
 import numpy as np
 from loguru import logger
+import pandas as pd
+import math
 
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
@@ -74,6 +76,15 @@ class Worker(BaseWorker):
             self.fps*metrics_duration,
             self.fps*metrics_update_time
         )
+
+        self.result_table = pd.DataFrame(columns=[
+            'frameID',
+            'position',
+            'crowd_count', 
+            'social_distance', 'distance_segment_count', 
+            'mask_wearing_count', 'no_mask_count', 
+            'no_hand_washing_count', 'hand_washing_wrong_count', 'hand_washing_correct_count'
+        ])
 
     def _workFlow(self):
         # [LEVEL_0_BLOCK]
@@ -173,6 +184,18 @@ class Worker(BaseWorker):
         )
 
         # [LEVEL_7_BLOCK] === OUTPUT -> frame and assessment
+        hours, remain_second_frame = math.floor(self.frameID / (3600*self.fps)), self.frameID % (3600*self.fps)
+        minutes, remain_second_frame = math.floor(remain_second_frame / (60*self.fps)), remain_second_frame % (60*self.fps)
+        seconds, remain_second_frame = math.floor(remain_second_frame / (1*self.fps)), remain_second_frame % (1*self.fps)
+        ms = math.floor(remain_second_frame * 1000 / self.fps)
+        self.result_table.loc[len(self.result_table)] = {
+            'frameID': self.frameID,
+            'position': f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}",
+            'crowd_count': len(online_persons),
+            'social_distance': total_distance, 'distance_segment_count': total_edge_num,
+            'mask_wearing_count': len(with_mask), 'no_mask_count': len(without_mask),
+            'no_hand_washing_count': len(notWashIds), 'hand_washing_wrong_count': len(wrongWashIds), 'hand_washing_correct_count': len(correctWashIds)
+        }
         return self.frameID, frame
 
     def _conditionWork(self):
@@ -184,3 +207,9 @@ class Worker(BaseWorker):
 
     def _endingWork(self):
         self.cap.release()
+
+    def GetResultTable(self, clear=True):
+        tmp = self.result_table
+        if clear:
+            self.result_table = self.result_table[0:0]
+        return tmp

@@ -18,3 +18,6 @@ class BaseWorker:
         raise NotImplementedError
     def _endingWork(self):
         raise NotImplementedError
+
+    def GetResultTable(self, clear=True):
+        return None

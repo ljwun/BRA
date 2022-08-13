@@ -88,6 +88,11 @@ def make_parser():
         help="storing and pushing stream video encoder"
     )
     parser.add_argument(
+        "-csv", "--write_to_csv",
+        type=str, default=None,
+        help="storing time sequence result as .csv"
+    )
+    parser.add_argument(
         "--track_thresh",
         type=float, default=0.5,
         help="tracking confidence threshold"
@@ -289,3 +294,9 @@ if __name__ == "__main__":
             ffmpeg_process.terminate()
         if vwriter_process is not None:
             vwriter_process.terminate()
+        if args.write_to_csv is not None:
+            result_table = worker.GetResultTable()
+            if result_table is not None:
+                result_table.to_csv(args.write_to_csv)
+            else:
+                print(f"Warning: worker not support result recording")

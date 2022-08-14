@@ -8,6 +8,7 @@ import time
 import re
 import math
 import importlib
+import pandas as pd
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
@@ -297,8 +298,31 @@ if __name__ == "__main__":
             vwriter_process.stdin.close()
             vwriter_process.wait()
         if args.write_to_csv is not None:
-            result_table = worker.GetResultTable()
-            if result_table is not None:
-                result_table.to_csv(args.write_to_csv)
+            raw_table = worker.GetResultTable()
+            if raw_table is not None:
+                minute_group = raw_table.groupby(raw_table['position'].str[:-7])
+                minute_table = minute_group.agg({
+                    'crowd_count':'mean',
+                    'social_distance': 'sum',
+                    'distance_segment_count': 'sum',
+                    
+                    'mask_wearing_count': 'sum',
+                    'no_mask_count': 'sum',
+                    
+                    'no_hand_washing_count': 'sum',
+                    'hand_washing_wrong_count': 'sum',
+                    'hand_washing_correct_count': 'sum'
+                })
+                interest_table = pd.DataFrame(
+                    {
+                        '1m_avg_crowd_count':minute_table['crowd_count'],
+                        "1m_avg_social_distance": minute_table['social_distance'] / minute_table['distance_segment_count'],
+                        "1m_avg_mask_wearing_ratio": minute_table['mask_wearing_count'] / (minute_table['mask_wearing_count']+minute_table['no_mask_count']),
+                        "1m_avg_hand_correct_washing_ratio": minute_table['hand_washing_correct_count'] / (minute_table['hand_washing_correct_count']+minute_table['hand_washing_wrong_count']+minute_table['no_hand_washing_count']),
+                    }
+                ).fillna(0)
+                raw_table_name = osp.normpath(osp.join(osp.dirname(args.write_to_csv), f'[raw]{osp.basename(args.write_to_csv)}'))
+                raw_table.to_csv(raw_table_name)
+                interest_table.to_csv(args.write_to_csv)
             else:
                 print(f"Warning: worker not support result recording")

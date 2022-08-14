@@ -31,7 +31,7 @@ class Worker(BaseWorker):
         conf_path, track_parameter,
         record_life=2,
         metrics_duration=600,
-        metrics_update_time=5,
+        metrics_update_time=600,
         actual_framerate=None,
         reid=False,
         start_frame=None
@@ -50,7 +50,7 @@ class Worker(BaseWorker):
             for _ in range(start_frame):
                 self.cap.read()
 
-        self.MDetector = MaskChecker("cuda:0", 'm', 'New_FMD_m1k.pth')
+        self.MDetector = MaskChecker("cuda:0", 'm', 'FMD_m1k.pth')
         self.PDetector = Detector('m', 0, True, True)
         if self.reid:
             self.byteTracker = BYTETracker_reid(type('',(object,),track_parameter)(), frame_rate=self.fps)

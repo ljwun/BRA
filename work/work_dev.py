@@ -165,7 +165,9 @@ if __name__ == "__main__":
         args.config, track_parameter,
         actual_framerate = framerate,
         reid=args.reid,
-        start_frame = start_frame
+        start_frame = start_frame,
+        metrics_duration=600,
+        metrics_update_time=60,
     )
 
     source_size = (
@@ -301,24 +303,37 @@ if __name__ == "__main__":
             raw_table = worker.GetResultTable()
             if raw_table is not None:
                 minute_group = raw_table.groupby(raw_table['position'].str[:-7])
-                minute_table = minute_group.agg({
-                    'crowd_count':'mean',
-                    'social_distance': 'sum',
-                    'distance_segment_count': 'sum',
-                    
-                    'mask_wearing_count': 'sum',
-                    'no_mask_count': 'sum',
-                    
-                    'no_hand_washing_count': 'sum',
-                    'hand_washing_wrong_count': 'sum',
-                    'hand_washing_correct_count': 'sum'
-                })
+                minute_table = minute_group.agg(
+                    {
+                        'crowd_count':'mean',
+                        'social_distance': 'sum',
+                        'distance_segment_count': 'sum',
+                        'mask_wearing_count': 'sum',
+                        'no_mask_count': 'sum',
+                        'no_hand_washing_count': 'sum',
+                        'hand_washing_wrong_count': 'sum',
+                        'hand_washing_correct_count': 'sum'
+                    }
+                )
+                window_size = 10
+                ten_min_table = pd.DataFrame(
+                    {
+                        'crowd_count':minute_table['crowd_count'].rolling(window_size, min_periods=1).mean(),
+                        'social_distance': minute_table['social_distance'].rolling(window_size, min_periods=1).sum(),
+                        'distance_segment_count': minute_table['distance_segment_count'].rolling(window_size, min_periods=1).sum(),
+                        'mask_wearing_count':minute_table['mask_wearing_count'].rolling(window_size, min_periods=1).sum(),
+                        'no_mask_count':minute_table['no_mask_count'].rolling(window_size, min_periods=1).sum(),
+                        'no_hand_washing_count':minute_table['no_hand_washing_count'].rolling(window_size, min_periods=1).sum(),
+                        'hand_washing_wrong_count':minute_table['hand_washing_wrong_count'].rolling(window_size, min_periods=1).sum(),
+                        'hand_washing_correct_count':minute_table['hand_washing_correct_count'].rolling(window_size, min_periods=1).sum()
+                    }
+                )
                 interest_table = pd.DataFrame(
                     {
-                        '1m_avg_crowd_count':minute_table['crowd_count'],
-                        "1m_avg_social_distance": minute_table['social_distance'] / minute_table['distance_segment_count'],
-                        "1m_avg_mask_wearing_ratio": minute_table['mask_wearing_count'] / (minute_table['mask_wearing_count']+minute_table['no_mask_count']),
-                        "1m_avg_hand_correct_washing_ratio": minute_table['hand_washing_correct_count'] / (minute_table['hand_washing_correct_count']+minute_table['hand_washing_wrong_count']+minute_table['no_hand_washing_count']),
+                        '1m_avg_crowd_count':ten_min_table['crowd_count'],
+                        "1m_avg_social_distance": ten_min_table['social_distance'] / ten_min_table['distance_segment_count'],
+                        "1m_avg_mask_wearing_ratio": ten_min_table['mask_wearing_count'] / (ten_min_table['mask_wearing_count']+ten_min_table['no_mask_count']),
+                        "1m_avg_hand_correct_washing_ratio": ten_min_table['hand_washing_correct_count'] / (ten_min_table['hand_washing_correct_count']+ten_min_table['hand_washing_wrong_count']+ten_min_table['no_hand_washing_count']),
                     }
                 ).fillna(0)
                 raw_table_name = osp.normpath(osp.join(osp.dirname(args.write_to_csv), f'[raw]{osp.basename(args.write_to_csv)}'))

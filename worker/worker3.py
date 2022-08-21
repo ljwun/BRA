@@ -11,6 +11,7 @@ sys.path.append(__proot__)
 sys.path.append(osp.join(__proot__,  "third_party", "YOLOX"))
 sys.path.append(osp.join(__proot__, "third_party", "ByteTrack", "yolox"))
 
+from pipe_block import FrameCenter
 import compute_block as cmb
 from mask.checker import MaskChecker
 from detect import Detector
@@ -37,18 +38,11 @@ class Worker(BaseWorker):
         start_frame=None
     ):
         super().__init__()
-        self.cap = cv2.VideoCapture(vin_path)
-        if not self.cap.isOpened():
-            raise Exception(f'Could not open file "{vin_path}"!')
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+        self.FCenter = FrameCenter(vin_path, max_batch=1, start_frame=start_frame)
+        self.fps = self.FCenter.Metadata['fps']
         if actual_framerate is not None:
             self.fps = actual_framerate
-        self.frameID = 0
-        self.retval = True
         self.reid = reid
-        if start_frame is not None:
-            for _ in range(start_frame):
-                self.cap.read()
 
         self.MDetector = MaskChecker("cuda:0", 'm', 'FMD_m1k.pth')
         self.PDetector = Detector('m', 0, True, True)
@@ -88,7 +82,9 @@ class Worker(BaseWorker):
 
     def _workFlow(self):
         # [LEVEL_0_BLOCK]
-        _, frame = self.cap.retrieve()
+        FList, length, FIDs = self.FCenter.Allocate()
+        frame = FList[0]
+        frameID = FIDs[0]
 
         # [LEVEL_1_BLOCK] === INPUT -> frame
         person_outputs, person_info = self.PDetector.detect(frame)
@@ -184,29 +180,26 @@ class Worker(BaseWorker):
         )
 
         # [LEVEL_7_BLOCK] === OUTPUT -> frame and assessment
-        hours, remain_second_frame = math.floor(self.frameID / (3600*self.fps)), self.frameID % (3600*self.fps)
+        hours, remain_second_frame = math.floor(frameID / (3600*self.fps)), frameID % (3600*self.fps)
         minutes, remain_second_frame = math.floor(remain_second_frame / (60*self.fps)), remain_second_frame % (60*self.fps)
         seconds, remain_second_frame = math.floor(remain_second_frame / (1*self.fps)), remain_second_frame % (1*self.fps)
         ms = math.floor(remain_second_frame * 1000 / self.fps)
         self.result_table.loc[len(self.result_table)] = {
-            'frameID': self.frameID,
+            'frameID': frameID,
             'position': f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}",
             'crowd_count': len(online_persons),
             'social_distance': total_distance, 'distance_segment_count': total_edge_num,
             'mask_wearing_count': len(with_mask), 'no_mask_count': len(without_mask),
             'no_hand_washing_count': len(notWashIds), 'hand_washing_wrong_count': len(wrongWashIds), 'hand_washing_correct_count': len(correctWashIds)
         }
-        return self.frameID, frame
+        return frameID, frame
 
     def _conditionWork(self):
-        self.frameID += 1
-        self.retval = self.cap.grab()
-        if not self.retval:
-            return False
-        return True
+        self.FCenter.Load()
+        return not self.FCenter.Finished
 
     def _endingWork(self):
-        self.cap.release()
+        self.FCenter.Exit()
 
     def GetResultTable(self, clear=True):
         tmp = self.result_table

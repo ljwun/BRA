@@ -171,8 +171,8 @@ if __name__ == "__main__":
     )
 
     source_size = (
-        int(worker.cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-        int(worker.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        int(worker.FCenter.Metadata['width']),
+        int(worker.FCenter.Metadata['height'])
     )
     print(f'source_size : {source_size}')
     stored_size = source_size

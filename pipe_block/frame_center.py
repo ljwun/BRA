@@ -14,7 +14,7 @@ class FrameCenter:
         if start_frame is not None:
             for _ in range(start_frame):
                 self.cap.read()
-        self.base_frame_ID = 0
+        self.base_frame_ID = 1
         self.Metadata = {
             'fps':self.cap.get(cv2.CAP_PROP_FPS),
             'height':self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT),
@@ -36,8 +36,8 @@ class FrameCenter:
         return bfr, len(bfr), FIDs
 
     def Load(self)->None:
-        ret, frame = self.cap.read()
         for i in range(self.max_batch):
+            ret, frame = self.cap.read()
             if not ret:
                 self.End = True
                 return

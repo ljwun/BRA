@@ -65,14 +65,15 @@ class Detector:
             )
         } for img in imgs]
 
-        imgs = [self.__preproc(img) for img in imgs]
-        imgs = np.array(imgs)
+        imgs = np.stack([self.__preproc(img) for img in imgs])
         imgs = torch.from_numpy(imgs).float().to(self.device)
         if self.fp16:
             imgs = imgs.half()
 
         with torch.no_grad():
+            t0 = time.time()
             outputs = self.model(imgs)
+            logger.info("Infer time: {:.4f}s".format(time.time() - t0))
             outputs = postprocess(
                 outputs, self.num_classes, self.confthre, self.nmsthre
             )

@@ -5,6 +5,7 @@ import numpy as np
 from loguru import logger
 import pandas as pd
 import math
+import copy
 
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
@@ -35,10 +36,11 @@ class Worker(BaseWorker):
         metrics_update_time=600,
         actual_framerate=None,
         reid=False,
-        start_frame=None
+        start_frame=None,
+        batch_size=1
     ):
         super().__init__()
-        self.FCenter = FrameCenter(vin_path, max_batch=1, start_frame=start_frame)
+        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_frame=start_frame)
         self.fps = self.FCenter.Metadata['fps']
         if actual_framerate is not None:
             self.fps = actual_framerate
@@ -52,8 +54,12 @@ class Worker(BaseWorker):
         else:
             self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
         self.mapper = Mapper(conf_path)
-        self.alcoholFilter = EventFilter(conf_path, record_life, self.fps)
+        self.washFilter = EventFilter(conf_path, record_life, self.fps)
 
+        self.person_count_metrics = cmb.ACBlock(
+            self.fps*metrics_duration,
+            self.fps*metrics_update_time
+        )
         self.mask_metrics = cmb.ACBlock(
             self.fps*metrics_duration,
             self.fps*metrics_update_time
@@ -62,137 +68,190 @@ class Worker(BaseWorker):
             self.fps*metrics_duration,
             self.fps*metrics_update_time
         )
-        self.hand_wash_metrics = cmb.ACBlock(
-            self.fps*metrics_duration,
-            self.fps*metrics_update_time
-        )
         self.wash_correct_metrics = cmb.ACBlock(
             self.fps*metrics_duration,
             self.fps*metrics_update_time
         )
 
-        self.result_table = pd.DataFrame(columns=[
-            'frameID',
-            'position',
-            'crowd_count', 
-            'social_distance', 'distance_segment_count', 
-            'mask_wearing_count', 'no_mask_count', 
-            'no_hand_washing_count', 'hand_washing_wrong_count', 'hand_washing_correct_count'
-        ])
-
     def _workFlow(self):
         # [LEVEL_0_BLOCK]
         FList, length, FIDs = self.FCenter.Allocate()
-        frame = FList[0]
-        frameID = FIDs[0]
+        packet = {
+            'frames':FList,
+            'fids':FIDs,
+        }
 
         # [LEVEL_1_BLOCK] === INPUT -> frame
-        person_outputs, person_info = self.PDetector.detect(frame)
-        mask_outputs, mask_info = self.MDetector.detect(frame)
+        person_outputs, person_infos = self.PDetector.detect(packet['frames'])
+        packet['p_outputs'] = person_outputs
+        packet['p_infos'] = person_infos
+
+        mask_outputs, mask_infos = self.MDetector.detect(packet['frames'])
+        packet['m_outputs'] = mask_outputs
+        packet['m_infos'] = mask_infos
 
         # [LEVEL_2_BLOCK] === INPUT -> LEVEL_1_PERSON_BLOCK result
-        online_persons = []
-        if person_outputs[0] is not None:
+        tracked_person = []
+        for frame, p_output, p_info in zip(packet['frames'], packet['p_outputs'], packet['p_infos']):
+            if p_output is None:
+                tracked_person.append([])
+                continue
             if self.reid:
-                feats = self.appearanceExtractor.extract_with_crop(frame, person_outputs[0], 0.1)
-                online_persons = self.byteTracker.update(
-                    person_outputs[0], 
-                    [person_info[0]['height'], person_info[0]['width']], 
-                    self.PDetector.test_size,
-                    feats
+                feats = self.appearanceExtractor.extract_with_crop(frame, p_output, 0.1)
+                tracked_person.append(
+                    copy.deepcopy(
+                        self.byteTracker.update(
+                            p_output, 
+                            [p_info['height'], p_info['width']], 
+                            self.PDetector.test_size,
+                            feats
+                        )
+                    )
                 )
             else:
-                online_persons = self.byteTracker.update(
-                    person_outputs[0], 
-                    [person_info[0]['height'], person_info[0]['width']], 
-                    self.PDetector.test_size
+                tracked_person.append(
+                    copy.deepcopy(
+                        self.byteTracker.update(
+                            p_output, 
+                            [p_info['height'], p_info['width']], 
+                            self.PDetector.test_size
+                        )
+                    )
+                    
                 )
-        with_mask, without_mask = [], []
-        if mask_outputs[0] is not None:
-            mask_out = mask_outputs[0].cpu()
-            out = self.MDetector.output_tidy(mask_out, mask_info, 0.5)
-            # mask_detector.visual_rp(frame, mask_out, mask_info, 0.5)
-            with_mask = out['with_mask']+out['mask_wear_incorrect']
-            without_mask = out['without_mask']
+        packet['tracked_person'] = tracked_person
+        packet['crowd_count'] = [len(t_person) for t_person in tracked_person]
+
+        mask_wearing_count, no_mask_count = [], []
+        for frame, m_output, m_info in zip(packet['frames'], packet['m_outputs'], packet['m_infos']):
+            with_mask, without_mask = [], []
+            if m_output is not None:
+                mask_out = m_output
+                # mask_out = mask_outputs[0].cpu()
+                out = self.MDetector.output_tidy(mask_out, m_info, 0.5)
+                # self.MDetector.visual_rp(frame, mask_out, m_info, 0.5)
+                with_mask = out['with_mask']+out['mask_wear_incorrect']
+                without_mask = out['without_mask']
+            mask_wearing_count.append(len(with_mask))
+            no_mask_count.append(len(without_mask))
+        packet['mask_wearing_count'] = mask_wearing_count
+        packet['no_mask_count'] = no_mask_count
             
         # [LEVEL_3_BLOCK] === INPUT -> tracked ID and tracked person
-        notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.alcoholFilter.work(online_persons)
-        bottom_center_points = np.asarray([(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in online_persons])
-        IPM_points = self.mapper.points_warp(bottom_center_points)
-        if bottom_center_points.shape[0] != 0:
-            distance = cdist(IPM_points, IPM_points, 'euclidean')
-        else:
-            distance = np.zeros(0)
-        
-        # [LEVEL_4_BLOCK] === INPUT -> numerator and denominator
-        total_distance = distance.sum() / 2
-        total_edge_num = IPM_points.shape[0] * (IPM_points.shape[0]-1) / 2
-        distance_period_avg = self.distance_metrics.step(total_distance, total_edge_num)
-        mask_len = len(with_mask) + len(without_mask)
-        mask_period_avg = self.mask_metrics.step(len(with_mask), mask_len)
-        entry_len = len(notWashIds) + len(wrongWashIds) + len(correctWashIds)
-        washed_len = len(wrongWashIds) + len(correctWashIds)
-        washed_avg = self.hand_wash_metrics.step(washed_len, entry_len)
-        wash_correct_avg = self.wash_correct_metrics.step(len(correctWashIds), washed_len)
-  
-        # [LEVEL_5_BLOCK] === INPUT -> metadata
-        self.alcoholFilter.visualize(frame, online_persons)
-        WarningLine(frame, bottom_center_points, distance, (0, 0, 255), 6, 0, 150.0, True)
-        WarningLine(frame, bottom_center_points, distance, (0, 133, 242), 2, 150.0, 250.0)
-        for point in bottom_center_points:
-            cv2.circle(
-                frame, 
-                (np.int32(point[0]), np.int32(point[1])), 
-                6, (0, 255, 0),
-                -1, 8, 0
+        # (HAND)
+        no_hand_washing_count, hand_washing_wrong_count, hand_washing_correct_count = [], [], []
+        for frame, t_person in zip(packet['frames'], packet['tracked_person']):
+            notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.washFilter.work(t_person)
+            no_hand_washing_count.append(len(notWashIds))
+            hand_washing_wrong_count.append(len(wrongWashIds))
+            hand_washing_correct_count.append(len(correctWashIds))
+            self.washFilter.visualize(frame, t_person)
+        packet['no_hand_washing_count'] = no_hand_washing_count
+        packet['hand_washing_wrong_count'] = hand_washing_wrong_count
+        packet['hand_washing_correct_count'] = hand_washing_correct_count
+
+        # (DISTANCE)
+        social_distance, distance_segment_count = [], []
+        for frame, t_person in zip(packet['frames'], packet['tracked_person']):
+            bottom_center_points = np.asarray(
+                [(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in t_person]
+            )
+            IPM_points = self.mapper.points_warp(bottom_center_points)
+            if bottom_center_points.shape[0] != 0:
+                distance = cdist(IPM_points, IPM_points, 'euclidean')
+            else:
+                distance = np.zeros(0)
+            social_distance.append(distance.sum() / 2)
+            distance_segment_count.append(IPM_points.shape[0] * (IPM_points.shape[0]-1) / 2)
+            WarningLine(frame, bottom_center_points, distance, (0, 0, 255), 6, 0, 150.0, True)
+            WarningLine(frame, bottom_center_points, distance, (0, 133, 242), 2, 150.0, 250.0)
+            for point in bottom_center_points:
+                cv2.circle(
+                    frame, 
+                    (np.int32(point[0]), np.int32(point[1])), 
+                    6, (0, 255, 0),
+                    -1, 8, 0
+                )
+        packet['social_distance'] = social_distance
+        packet['distance_segment_count'] = distance_segment_count
+
+        # [LEVEL_4_BLOCK] === INPUT -> assessment result
+        raw_data, short_data = [], []
+        for (fid, frame,
+            crowdCount,
+            sdist, distSegN,
+            maskCount, noMaskCount,
+            noWashCount, wrongWashCount, correctWashCount
+            ) in zip(
+            packet['fids'], packet['frames'],
+            packet['crowd_count'],
+            packet['social_distance'], packet['distance_segment_count'],
+            packet['mask_wearing_count'], packet['no_mask_count'],
+            packet['no_hand_washing_count'], packet['hand_washing_wrong_count'], packet['hand_washing_correct_count']
+        ):
+            avg_dist = sdist / distSegN if distSegN != 0 else 0
+            mask_ratio = maskCount / (maskCount + noMaskCount) if (maskCount + noMaskCount) != 0 else 0.0
+            texts = [
+                f'Real-time',
+                f'+ Person Count: {crowdCount:d}',
+                f'+ Average Distance: {avg_dist / 100:.2f} m',
+                f'+ Mask Ratio: {mask_ratio * 100:.2f}% ({maskCount})',
+            ]
+            cmb.VISBlockText(
+                frame,
+                texts, (0, 0),
+                ratio=1, thickness=3,
+                fg_color=(0 ,0 ,0), bg_color=(255, 255, 255),
+                point_reverse=(False,True)
+            )
+            
+            p_crowdCount, is_new = self.person_count_metrics.step(crowdCount, 1)
+            p_dist, _ = self.distance_metrics.step(sdist, distSegN)
+            p_mask_ratio, _ = self.mask_metrics.step(maskCount, maskCount+noMaskCount)
+            p_wash, _ = self.wash_correct_metrics.step(correctWashCount, noWashCount+wrongWashCount+correctWashCount)
+            texts = [
+                f'Period-time',
+                f'+ Person Count: {p_crowdCount:.2f}',
+                f'+ Social Distance: {p_dist / 100:.2f} m',
+                f'+ Mask Ratio: {p_mask_ratio * 100:.2f}%',
+                f'+ Correct Wash: {p_wash * 100:.2f}%',
+            ]
+            cmb.VISBlockText(
+                frame,
+                texts, (0, 0),
+                ratio=1, thickness=3,
+                fg_color=(255, 255, 255), bg_color=(0 ,0 ,0),
+                point_reverse=(True,True)
             )
 
-        # [LEVEL_6_BLOCK] === INPUT -> assessment
-        avg_distance = total_distance / total_edge_num if total_edge_num != 0 else 0
-        with_mask_ratio = len(with_mask) / mask_len if mask_len != 0 else 1.0
-        texts = [
-            f'Real-time',
-            f'Person Count: {len(online_persons):d}',
-            f'Average Distance: {avg_distance / 100:.2f} m',
-            f'Mask Check: {with_mask_ratio * 100:.2f}% ({mask_len})',
-        ]
-        cmb.VISBlockText(
-            frame,
-            texts, (0, 0),
-            ratio=1, thickness=3,
-            fg_color=(0 ,0 ,0), bg_color=(255, 255, 255),
-            point_reverse=(False,True)
-        )
-        texts = [
-            f'Period-time average:',
-            f'Social Distance: {distance_period_avg / 100:.2f} m',
-            f'Mask Worn Ratio: {mask_period_avg * 100:.2f}%',
-            f'Disinfection After Entry:',
-            f'      Washed Ratio: {washed_avg * 100:.2f}%',
-            f'      Correct Ratio: {wash_correct_avg * 100:.2f}%'
-        ]
-        end_position = cmb.VISBlockText(
-            frame,
-            texts, (0, 0),
-            ratio=1, thickness=3,
-            fg_color=(255, 255, 255), bg_color=(0 ,0 ,0),
-            point_reverse=(True,True)
-        )
 
-        # [LEVEL_7_BLOCK] === OUTPUT -> frame and assessment
-        hours, remain_second_frame = math.floor(frameID / (3600*self.fps)), frameID % (3600*self.fps)
-        minutes, remain_second_frame = math.floor(remain_second_frame / (60*self.fps)), remain_second_frame % (60*self.fps)
-        seconds, remain_second_frame = math.floor(remain_second_frame / (1*self.fps)), remain_second_frame % (1*self.fps)
-        ms = math.floor(remain_second_frame * 1000 / self.fps)
-        self.result_table.loc[len(self.result_table)] = {
-            'frameID': frameID,
-            'position': f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}",
-            'crowd_count': len(online_persons),
-            'social_distance': total_distance, 'distance_segment_count': total_edge_num,
-            'mask_wearing_count': len(with_mask), 'no_mask_count': len(without_mask),
-            'no_hand_washing_count': len(notWashIds), 'hand_washing_wrong_count': len(wrongWashIds), 'hand_washing_correct_count': len(correctWashIds)
-        }
-        return frameID, frame
+
+            hours, remain_second_frame = math.floor(fid / (3600*self.fps)), fid % (3600*self.fps)
+            minutes, remain_second_frame = math.floor(remain_second_frame / (60*self.fps)), remain_second_frame % (60*self.fps)
+            seconds, remain_second_frame = math.floor(remain_second_frame / (1*self.fps)), remain_second_frame % (1*self.fps)
+            ms = math.floor(remain_second_frame * 1000 / self.fps)
+            raw_data.append({
+                'frame_id': fid,
+                'play_time': f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}",
+                'crowd_count': crowdCount,
+                'social_distance': sdist, 'distance_segment_count': distSegN,
+                'mask_wearing_count': maskCount, 'no_mask_count': noMaskCount,
+                'no_hand_washing_count': noWashCount, 'hand_washing_wrong_count': wrongWashCount, 'hand_washing_correct_count': correctWashCount
+            })
+            if is_new:
+                short_data.append({
+                    'end_frame_id':fid,
+                    'end_play_time':f"{hours:02d}:{minutes:02d}:{seconds:02d}.{ms:03d}",
+                    'person_count':p_crowdCount,
+                    'social_distance':p_dist,
+                    'mask_ratio':p_mask_ratio,
+                    'correct_wash':p_wash,
+                })
+        packet['raw_data'] = raw_data
+        packet['short_data'] = short_data
+
+        # [LEVEL_5_BLOCK] === OUTPUT
+        return packet['fids'], packet['frames'], packet['raw_data'], packet['short_data']
 
     def _conditionWork(self):
         self.FCenter.Load()
@@ -200,9 +259,3 @@ class Worker(BaseWorker):
 
     def _endingWork(self):
         self.FCenter.Exit()
-
-    def GetResultTable(self, clear=True):
-        tmp = self.result_table
-        if clear:
-            self.result_table = self.result_table[0:0]
-        return tmp

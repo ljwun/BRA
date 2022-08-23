@@ -8,7 +8,7 @@ import time
 import re
 import math
 import importlib
-import pandas as pd
+import csv
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
@@ -118,6 +118,11 @@ def make_parser():
         type=str, default="worker.worker3",
         help='specify which worker definition you want to use'
     )
+    parser.add_argument(
+        '-b', '--batch_size',
+        type=int, default=1,
+        help='batch size for working with pipe'
+    )
     return parser
 
 if __name__ == "__main__":
@@ -168,6 +173,7 @@ if __name__ == "__main__":
         start_frame = start_frame,
         metrics_duration=600,
         metrics_update_time=60,
+        batch_size=args.batch_size
     )
 
     source_size = (
@@ -204,18 +210,25 @@ if __name__ == "__main__":
             raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
     shouldResize = source_size != stored_size
 
+    # estimate record
+    raw_data_record = []
+    short_data_record = []
+
     # worker_analysis
     round_times = np.zeros(test_size)
-    frame_buffer = []
+    fids_bfr, frames_bfr = [], []
     worker_iter = iter(worker)
     for i in range(11):
         t0 = time.time()
-        fid, frame = next(worker_iter)
+        fids, frames, raw_data, short_data = next(worker_iter)
         if shouldResize:
-            frame = cv2.resize(frame, stored_size)
+            frames = [cv2.resize(f, stored_size) for f in frames]
         round_times[i] = time.time() - t0
-        frame_buffer.append((fid, frame))
-    worker_process_rate = 1.0 / round_times[1:].mean()
+        fids_bfr += fids
+        frames_bfr += frames
+        raw_data_record += raw_data
+        short_data_record += short_data
+    worker_process_rate = args.batch_size / round_times[1:].mean()
 
 
     if args.video_output is None:
@@ -262,7 +275,7 @@ if __name__ == "__main__":
         )
     
     print(f'Working FPS is : {worker_process_rate}')
-    for fid, frame in frame_buffer:
+    for fid, frame in zip(fids_bfr, frames_bfr):
         print(f"Now is => [ {fid / worker.fps} ]", end='\r')
         if ffmpeg_process is not None:
             ffmpeg_process.stdin.write(frame.data.tobytes())
@@ -271,17 +284,24 @@ if __name__ == "__main__":
     print('\nstart working!!!')
     
     try:
-        for fid, frame in worker:
-            print(f"Now is => [ {fid / worker.fps} ]", end='\r')
-            if shouldResize:
-                frame = cv2.resize(frame, stored_size)
-            frameBytes = frame.data.tobytes()
-            if ffmpeg_process is not None:
-                ffmpeg_process.stdin.write(frameBytes)
-            if vwriter_process is not None:
-                vwriter_process.stdin.write(frameBytes)
-            if frame_limit is not None and fid >= frame_limit:
+        should_stop = False
+        for fids, frames, raw_data, short_data in worker:
+            if should_stop:
                 break
+            raw_data_record += raw_data
+            short_data_record += short_data
+            print(f"Now is => [ {fids[0] / worker.fps} ]", end='\r')
+            for fid, frame in zip(fids, frames):
+                if shouldResize:
+                    frame = cv2.resize(frame, stored_size)
+                frameBytes = frame.data.tobytes()
+                if ffmpeg_process is not None:
+                    ffmpeg_process.stdin.write(frameBytes)
+                if vwriter_process is not None:
+                    vwriter_process.stdin.write(frameBytes)
+                if frame_limit is not None and fid >= frame_limit:
+                    should_stop = True
+                    break
         print('\n')
     except KeyboardInterrupt:
         worker._endingWork()
@@ -300,44 +320,15 @@ if __name__ == "__main__":
             vwriter_process.stdin.close()
             vwriter_process.wait()
         if args.write_to_csv is not None:
-            raw_table = worker.GetResultTable()
-            if raw_table is not None:
-                minute_group = raw_table.groupby(raw_table['position'].str[:-7])
-                minute_table = minute_group.agg(
-                    {
-                        'crowd_count':'mean',
-                        'social_distance': 'sum',
-                        'distance_segment_count': 'sum',
-                        'mask_wearing_count': 'sum',
-                        'no_mask_count': 'sum',
-                        'no_hand_washing_count': 'sum',
-                        'hand_washing_wrong_count': 'sum',
-                        'hand_washing_correct_count': 'sum'
-                    }
-                )
-                window_size = 10
-                ten_min_table = pd.DataFrame(
-                    {
-                        'crowd_count':minute_table['crowd_count'].rolling(window_size, min_periods=1).mean(),
-                        'social_distance': minute_table['social_distance'].rolling(window_size, min_periods=1).sum(),
-                        'distance_segment_count': minute_table['distance_segment_count'].rolling(window_size, min_periods=1).sum(),
-                        'mask_wearing_count':minute_table['mask_wearing_count'].rolling(window_size, min_periods=1).sum(),
-                        'no_mask_count':minute_table['no_mask_count'].rolling(window_size, min_periods=1).sum(),
-                        'no_hand_washing_count':minute_table['no_hand_washing_count'].rolling(window_size, min_periods=1).sum(),
-                        'hand_washing_wrong_count':minute_table['hand_washing_wrong_count'].rolling(window_size, min_periods=1).sum(),
-                        'hand_washing_correct_count':minute_table['hand_washing_correct_count'].rolling(window_size, min_periods=1).sum()
-                    }
-                )
-                interest_table = pd.DataFrame(
-                    {
-                        '1m_avg_crowd_count':ten_min_table['crowd_count'],
-                        "1m_avg_social_distance": ten_min_table['social_distance'] / ten_min_table['distance_segment_count'],
-                        "1m_avg_mask_wearing_ratio": ten_min_table['mask_wearing_count'] / (ten_min_table['mask_wearing_count']+ten_min_table['no_mask_count']),
-                        "1m_avg_hand_correct_washing_ratio": ten_min_table['hand_washing_correct_count'] / (ten_min_table['hand_washing_correct_count']+ten_min_table['hand_washing_wrong_count']+ten_min_table['no_hand_washing_count']),
-                    }
-                ).fillna(0)
-                raw_table_name = osp.normpath(osp.join(osp.dirname(args.write_to_csv), f'[raw]{osp.basename(args.write_to_csv)}'))
-                raw_table.to_csv(raw_table_name)
-                interest_table.to_csv(args.write_to_csv)
-            else:
+            if len(short_data_record) < 1 or len(raw_data_record) < 1:
                 print(f"Warning: worker not support result recording")
+            else:
+                with open(args.write_to_csv, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=list(short_data_record[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(short_data_record)
+                raw_table_name = osp.normpath(osp.join(osp.dirname(args.write_to_csv), f'[raw]{osp.basename(args.write_to_csv)}'))
+                with open(raw_table_name, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=list(raw_data_record[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(raw_data_record)

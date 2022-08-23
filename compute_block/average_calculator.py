@@ -17,7 +17,7 @@ class ACBlock:
 
         if self.counter != self.AC_END:
             self.counter += 1
-            return self.output_buffer
+            return self.output_buffer, False
         
         self.counter = 1
 
@@ -38,4 +38,4 @@ class ACBlock:
             self.period_buffer['numerator'] -= tmp['numerator']
             self.period_buffer['denominator'] -= tmp['denominator']
 
-        return self.output_buffer
+        return self.output_buffer, True

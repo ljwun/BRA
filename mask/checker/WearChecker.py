@@ -65,33 +65,33 @@ class MaskChecker:
         self.model.load_state_dict(ckpt["model"])
         return
 
-    def detect(self, img):
-        height, width = img.shape[:2]
-        ratio = min(self.test_size[0] / img.shape[0], self.test_size[1] / img.shape[1])
+    def detect(self, imgs):
+        if not isinstance(imgs, list):
+            imgs = [imgs]
+        imgs_info = [{
+            "height":img.shape[0],
+            "width":img.shape[1],
+            "raw":img,
+            "ratio":min(
+                self.test_size[0] / img.shape[0], 
+                self.test_size[1] / img.shape[1]
+            )
+        } for img in imgs]
 
-        img_info = {"id": 0}
-        img_info["height"] = height
-        img_info["width"] = width
-        img_info["ratio"] = ratio
-        img_info["raw"] = img
-
-        img, _ = self.preproc(img, None, self.test_size)
-        img = torch.from_numpy(img).unsqueeze(0)
-        img = img.float()
-        if self.device.split(':')[0] == "cuda":
-            img = img.cuda()
-            if self.fp16:
-                img = img.half()  # to FP16
+        imgs = np.stack([self.preproc(img, None, self.test_size)[0] for img in imgs])
+        imgs = torch.from_numpy(imgs).float().to(self.device)
+        if self.fp16:
+            imgs = imgs.half()
 
         with torch.no_grad():
             t0 = time.time()
-            outputs = self.model(img)
+            outputs = self.model(imgs)
+            logger.info("Infer time: {:.4f}s".format(time.time() - t0))
             outputs = postprocess(
                 outputs, self.num_classes, self.confthre,
                 self.nmsthre, class_agnostic=True
             )
-            logger.info("Infer time: {:.4f}s".format(time.time() - t0))
-        return outputs, img_info
+        return outputs, imgs_info
     
     def visual_rp(self, frame, mask_outputs, mask_info, cls_conf=0.5, color_map=None):
         color_map = self._COLORS if color_map is None else color_map

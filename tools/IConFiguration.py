@@ -16,7 +16,7 @@ from rich.tree import Tree
 from rich.traceback import install
 install(show_locals=True)
 import collections.abc
-from typing import Any
+from typing import Any, List, Tuple, Dict
 from collections import deque
 console = Console()
 
@@ -202,8 +202,8 @@ def prompt(
     prompt_str : str, 
     default : Any=None, 
     reg : str='.*', 
-    choice : [list[Any]]=[], 
-    parser : collections.abc.Callable[[Any]:Any] = lambda x:x
+    choice : List[Any]=[], 
+    parser : collections.abc.Callable[[Any],Any] = lambda x:x
 )->Any:
     if len(choice) == 0:
         choice_str = ""
@@ -243,7 +243,7 @@ def update(d, u):
             d[k] = v
     return d
 
-def OEDparse(OED:str)->list:
+def OEDparse(OED:str)->List:
     nodes = []
     for node_desc in OED:
         triggers = []
@@ -298,9 +298,9 @@ def OEDparse(OED:str)->list:
 
 def IEdit(
     node_name:str,
-    trigger:dict,
+    trigger:Dict,
     all_update:bool
-)->dict:
+)->Dict:
     if trigger['type'] == 'Fence':
         vertex_type = trigger['parameter']['vertex_type']
         if all_update or vertex_type['x'] is None:

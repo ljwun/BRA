@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from typing import Any
+from typing import Any, List, Tuple
 
 class FrameCenter:
     def __init__(self, video_path:str, max_batch:int=1, start_frame:int=None)->None:
@@ -21,7 +21,7 @@ class FrameCenter:
             'width':self.cap.get(cv2.CAP_PROP_FRAME_WIDTH),
         }
     
-    def Allocate(self)->tuple[list[np.ndarray], int, list[int]]:
+    def Allocate(self)->Tuple[List[np.ndarray], int, List[int]]:
         bfr = []
         if len(self.frame_bfr) >= self.max_batch:
             bfr = self.frame_bfr[:self.max_batch]

@@ -73,9 +73,9 @@ class Worker(BaseWorker):
             self.fps*metrics_update_time
         )
 
-    def _workFlow(self):
+    def _workFlow(self, dataToWork):
         # [LEVEL_0_BLOCK]
-        FList, length, FIDs = self.FCenter.Allocate()
+        FList, length, FIDs = dataToWork
         packet = {
             'frames':FList,
             'fids':FIDs,
@@ -253,9 +253,13 @@ class Worker(BaseWorker):
         # [LEVEL_5_BLOCK] === OUTPUT
         return packet['fids'], packet['frames'], packet['raw_data'], packet['short_data']
 
-    def _conditionWork(self):
+    def _conditionWork(self, dataToDecide):
+        return not self.FCenter.Finished or dataToDecide > 0
+
+    def _preparatory(self):
         self.FCenter.Load()
-        return not self.FCenter.Finished
+        dataToWork = self.FCenter.Allocate()
+        return dataToWork, dataToWork[1]
 
     def _endingWork(self):
         self.FCenter.Exit()

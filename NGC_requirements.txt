@@ -1,5 +1,5 @@
 argparse==1.4.0
-git+https://github.com/YyuK-Liao/cython_bbox.git#egg=cython-bbox
+git+git://github.com/YyuK-Liao/cython_bbox.git#egg=cython-bbox
 lap==0.4.0
 loguru==0.6.0
 opencv-python==4.5.5.64

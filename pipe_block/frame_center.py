@@ -3,7 +3,8 @@ import cv2
 from typing import Any, List, Tuple
 
 class FrameCenter:
-    def __init__(self, video_path:str, max_batch:int=1, start_frame:int=None)->None:
+    def __init__(self, video_path:str, max_batch:int=1, start_frame:int=None, frame_step:int=1)->None:
+        self.read_gap = frame_step - 1
         self.End = False
         self.Finished = False
         self.max_batch = max_batch
@@ -38,6 +39,8 @@ class FrameCenter:
     def Load(self)->None:
         for i in range(self.max_batch):
             ret, frame = self.cap.read()
+            for _ in range(self.read_gap):
+                ret, _ = self.cap.read() if ret else (False, None)
             if not ret:
                 self.End = True
                 return
@@ -47,6 +50,8 @@ class FrameCenter:
     def Async_Load(self)->None:
         while True:
             ret, frame = self.cap.read()
+            for _ in range(self.read_gap):
+                ret, _ = self.cap.read() if ret else (False, None)
             if not ret:
                 self.End = True
                 return

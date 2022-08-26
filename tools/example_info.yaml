@@ -1,0 +1,15 @@
+name: ED
+full_name: example dataset
+description: null
+video_folder: /video
+video:
+  train:
+    - path: path1/path2.avi
+      tag: "202"
+      property:
+        step_size: 40
+  val:
+    - path: path1/path3.avi
+      tag: "202"
+      property:
+        step_size: 80

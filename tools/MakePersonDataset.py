@@ -101,6 +101,7 @@ if __name__ == '__main__':
                     p_output = p_output.cpu().numpy()
                     scores = p_output[:, 4] * p_output[:, 5]
                     bboxes = p_output[:, :4]
+                    bboxes = bboxes / p_info['ratio']
                     bboxes[:, 2] = bboxes[:, 2] - bboxes[:, 0]
                     bboxes[:, 3] = bboxes[:, 3] - bboxes[:, 1]
                     for bbox, score in zip(bboxes, scores):

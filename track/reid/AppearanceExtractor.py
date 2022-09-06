@@ -1,11 +1,10 @@
 import os.path as osp
 import sys
-import os
+import os, re
 import cv2
 import torch
 import torch.nn.functional as F
 import numpy as np
-import time
 
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
 sys.path.append(__proot__)
@@ -16,13 +15,22 @@ from fastreid.modeling.meta_arch import build_model
 from fastreid.utils.checkpoint import Checkpointer
 
 class AppearanceExtractor:
-    def __init__(self, device):
-        cfg_file = osp.join(__proot__,  "third_party", "fast-reid", "configs", "MSMT17", "sbs_S50.yml")
+    def __init__(self, device, cfg_path, checkpoint):
+        self.device = re.match("cpu|cuda(:\d*)?", device)
+        assert self.device != None, f"Cannot resolve target device string ${device}"
+        self.device = self.device.group(0)
+        dinfo = self.device.split(":")
+        if dinfo[0] == "cuda":
+            assert(
+                int(dinfo[1]) <= torch.cuda.device_count()
+            ), "Cannot find target device"
+        
+        cfg_file = cfg_path
         self.cfg = get_cfg()
         self.cfg.merge_from_file(cfg_file)
         self.cfg.MODEL.BACKBONE.PRETRAIN = False
-        self.cfg.MODEL.DEVICE = device
-        self.cfg.MODEL.WEIGHTS = osp.join(__proot__,  "pretrain", "msmt_sbs_S50.pth")
+        self.cfg.MODEL.DEVICE = self.device
+        self.cfg.MODEL.WEIGHTS = checkpoint
         self.cfg.freeze()
 
         self.extractor = build_model(self.cfg)

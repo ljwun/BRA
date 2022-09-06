@@ -1,0 +1,32 @@
+mask:
+  device: 'cuda:0'
+  exp: '/BRA/mask/exp/FaceMask_m.py'
+  checkpoint: '/BRA/pretrain/FMD_m1k.pth'
+  fp16: True
+  fuse: True
+
+track_opt: &pt
+  track_thresh: 0.5
+  track_buffer: 300
+  match_thresh: 0.7
+  aspect_ratio_thresh: 1.6
+  min_box_area: 10.0
+
+reid_opt: &ptreid
+  device: 'cuda:0'
+  cfg: '/BRA/third_party/fast-reid/configs/MSMT17/sbs_S50.yml'
+  checkpoint: '/BRA/pretrain/msmt_sbs_S50.pth'
+
+person:
+  device: 'cuda:0'
+  exp: '/BRA/third_party/ByteTrack/exps/example/mot/yolox_m_mix_det.py'
+  checkpoint: '/BRA/pretrain/bytetrack_m_mot17.pth.tar'
+  fp16: True
+  fuse: True
+  track_opt: *pt
+  reid_opt: *ptreid
+
+general:
+  record_life: 2
+  metrics_duration: 600
+  metrics_update_time: 60

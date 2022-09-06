@@ -1,5 +1,5 @@
 from loguru import logger
-import sys, time
+import sys, re, time
 import os.path as osp
 import torch
 
@@ -12,27 +12,21 @@ from yolox.exp import get_exp
 from yolox.utils import fuse_model, get_model_info, postprocess
 
 class Detector:
-    def __init__(self, type, device, fuse, fp16):
-        assert(
-            device <= torch.cuda.device_count()
-        ), "Cannot find target device"
-
-        exp = get_exp(
-            osp.join(
-                __proot__,  "third_party", "ByteTrack",
-                "exps", "example", "mot",
-                f"yolox_{type}_mix_det.py")
-            , None)
+    def __init__(self, device, exp_path, checkpoint, fuse, fp16):
+        self.device = re.match("cpu|cuda(:\d*)?", device)
+        assert self.device != None, f"Cannot resolve target device string ${device}"
+        self.device = self.device.group(0)
+        dinfo = self.device.split(":")
+        if dinfo[0] == "cuda":
+            assert(
+                int(dinfo[1]) <= torch.cuda.device_count()
+            ), "Cannot find target device"
+        
+        exp = get_exp(exp_path , None)
         self.test_size = exp.test_size
-        ckpt_path = osp.join(
-            __proot__,
-            "pretrain",
-            f"bytetrack_{type}_mot17.pth.tar"
-        )
-
-        self.model = exp.get_model().to(device)
+        self.model = exp.get_model().to(self.device)
         self.model.eval()
-        ckpt = torch.load(ckpt_path, map_location="cpu")
+        ckpt = torch.load(checkpoint)
         self.model.load_state_dict(ckpt["model"])
         if fuse:
             self.model = fuse_model(self.model)
@@ -41,7 +35,6 @@ class Detector:
         
         self.fuse = fuse
         self.fp16 = fp16
-        self.device = device
 
         self.num_classes = exp.num_classes
 

@@ -37,7 +37,12 @@ def make_parser():
         help="source to worker"
     )
     parser.add_argument(
-        "-c", "--config",
+        "-vc", "--view_config",
+        type=str, required=True,
+        help="YAML format configuration to camera"
+    )
+    parser.add_argument(
+        "-wc", "--worker_config",
         type=str, required=True,
         help="YAML format configuration to worker"
     )
@@ -94,21 +99,6 @@ def make_parser():
         help="storing time sequence result as .csv"
     )
     parser.add_argument(
-        "--track_thresh",
-        type=float, default=0.5,
-        help="tracking confidence threshold"
-    )
-    parser.add_argument(
-        "--track_buffer", 
-        type=int, default=30,
-        help="the frames for keep lost tracks"
-    )
-    parser.add_argument(
-        "--match_thresh", 
-        type=float, default=0.8,
-        help="matching threshold for tracking"
-    )
-    parser.add_argument(
         '--reid', 
         action='store_true',
         help='using reid module to provide appearance features'
@@ -127,14 +117,6 @@ def make_parser():
 
 if __name__ == "__main__":
     args = make_parser().parse_args()
-    track_parameter = {
-        "track_thresh":args.track_thresh,
-        "track_buffer":args.track_buffer,
-        "match_thresh":args.match_thresh,
-        "aspect_ratio_thresh":1.6,
-        "min_box_area":10.0,
-        "mot20":False,
-    }
 
     test_size = 11
     frame_buffer = []
@@ -166,13 +148,12 @@ if __name__ == "__main__":
 
     Worker = importlib.import_module(args.worker_file).Worker
     worker = Worker(
-        args.video_input,
-        args.config, track_parameter,
+        vin_path=args.video_input,
+        view_cfg=args.view_config,
+        worker_cfg=args.worker_config,
         actual_framerate = framerate,
         reid=args.reid,
         start_frame = start_frame,
-        metrics_duration=600,
-        metrics_update_time=60,
         batch_size=args.batch_size
     )
 

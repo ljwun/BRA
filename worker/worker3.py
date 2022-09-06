@@ -6,6 +6,7 @@ from loguru import logger
 import pandas as pd
 import math
 import copy
+import yaml
 
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
@@ -30,47 +31,73 @@ class Worker(BaseWorker):
     def __init__(
         self,
         vin_path, 
-        conf_path, track_parameter,
-        record_life=2,
-        metrics_duration=600,
-        metrics_update_time=600,
+        view_cfg,
+        worker_cfg,
         actual_framerate=None,
         reid=False,
         start_frame=None,
-        batch_size=1
+        batch_size=1,
     ):
         super().__init__()
+        configStream = open(worker_cfg, 'r')
+        self.config = yaml.safe_load(configStream)
+        configStream.close()
+
         self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_frame=start_frame)
         self.fps = self.FCenter.Metadata['fps']
         if actual_framerate is not None:
             self.fps = actual_framerate
         self.reid = reid
 
-        self.MDetector = MaskChecker("cuda:0", 'm', 'FMD_m1k.pth')
-        self.PDetector = Detector('m', 0, True, True)
+        self.MDetector = MaskChecker(
+            device=self.config['mask']['device'],
+            exp_path=self.config['mask']['exp'],
+            checkpoint=self.config['mask']['checkpoint'],
+            fuse=self.config['mask']['fuse'],
+            fp16=self.config['mask']['fp16']
+        )
+        self.PDetector = Detector(
+            device=self.config['person']['device'],
+            exp_path=self.config['person']['exp'],
+            checkpoint=self.config['person']['checkpoint'],
+            fuse=self.config['person']['fuse'],
+            fp16=self.config['person']['fp16']
+        )
+        track_parameter = {
+            "track_thresh":self.config['track_opt']['track_thresh'],
+            "track_buffer":self.config['track_opt']['track_buffer'],
+            "match_thresh":self.config['track_opt']['match_thresh'],
+            "aspect_ratio_thresh":self.config['track_opt']['aspect_ratio_thresh'],
+            "min_box_area":self.config['track_opt']['min_box_area'],
+            "mot20":False,
+        }
         if self.reid:
             self.byteTracker = BYTETracker_reid(type('',(object,),track_parameter)(), frame_rate=self.fps)
-            self.appearanceExtractor = AppearanceExtractor("cuda:0")
+            self.appearanceExtractor = AppearanceExtractor(
+                device=self.config['person']['reid_opt']['device'],
+                cfg_path=self.config['person']['reid_opt']['cfg'],
+                checkpoint=self.config['person']['reid_opt']['checkpoint']
+            )
         else:
             self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
-        self.mapper = Mapper(conf_path)
-        self.washFilter = EventFilter(conf_path, record_life, self.fps)
+        self.mapper = Mapper(view_cfg)
+        self.washFilter = EventFilter(view_cfg, self.config['general']['record_life'], self.fps)
 
         self.person_count_metrics = cmb.ACBlock(
-            self.fps*metrics_duration,
-            self.fps*metrics_update_time
+            self.fps*self.config['general']['metrics_duration'],
+            self.fps*self.config['general']['metrics_update_time'],
         )
         self.mask_metrics = cmb.ACBlock(
-            self.fps*metrics_duration,
-            self.fps*metrics_update_time
+            self.fps*self.config['general']['metrics_duration'],
+            self.fps*self.config['general']['metrics_update_time'],
         )
         self.distance_metrics = cmb.ACBlock(
-            self.fps*metrics_duration,
-            self.fps*metrics_update_time
+            self.fps*self.config['general']['metrics_duration'],
+            self.fps*self.config['general']['metrics_update_time'],
         )
         self.wash_correct_metrics = cmb.ACBlock(
-            self.fps*metrics_duration,
-            self.fps*metrics_update_time
+            self.fps*self.config['general']['metrics_duration'],
+            self.fps*self.config['general']['metrics_update_time'],
         )
 
     def _workFlow(self, dataToWork):

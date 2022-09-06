@@ -5,30 +5,28 @@ import torch
 import numpy as np
 import cv2
 
-from ..exp import get_exp
-
 import sys
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
 from yolox.data.data_augment import ValTransform
 from yolox.utils import fuse_model, get_model_info, postprocess, vis
+from yolox.exp import get_exp
 
 class MaskChecker:
-    def __init__(self, device, type='m', pth_name="New_FMD_m1k.pth", fuse=True, fp16=True):
-        self.__model_type = type
-        self.__pth_name = pth_name
+    def __init__(self, device, exp_path, checkpoint, fuse, fp16):
         self.device = re.match("cpu|cuda(:\d*)?", device)
         assert self.device != None, f"Cannot resolve target device string ${device}"
         self.device = self.device.group(0)
-        dinfo = device.split(":")
+        dinfo = self.device.split(":")
         if dinfo[0] == "cuda":
             assert(
                 int(dinfo[1]) <= torch.cuda.device_count()
             ), "Cannot find target device"
         
-        self.exp = get_exp(type=self.__model_type)
-        self.model = self.exp.get_model().to(device)
+        self.exp = get_exp(exp_path)
+        self.model = self.exp.get_model().to(self.device)
         self.model.eval()
-        self.__ready_model(self.model, self.__pth_name)
+        ckpt = torch.load(checkpoint)
+        self.model.load_state_dict(ckpt["model"])
         self.preproc = ValTransform(legacy=False)
 
         if fuse:
@@ -54,16 +52,6 @@ class MaskChecker:
                 0.494, 0.184, 0.556,
             ]
         ).astype(np.float32).reshape(-1, 3)
-
-    def __ready_model(self, model, pth_name):
-        ckpt_path = os.path.join(
-            __proot__,
-            "pretrain",
-            pth_name
-        )
-        ckpt = torch.load(ckpt_path, map_location="cpu")
-        self.model.load_state_dict(ckpt["model"])
-        return
 
     def detect(self, imgs):
         if not isinstance(imgs, list):

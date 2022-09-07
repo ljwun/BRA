@@ -1,68 +1,86 @@
+import os
+import random
+
 import torch
-import os.path as osp
-import sys
+import torch.distributed as dist
+import torch.nn as nn
 
-__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
-from yolox.exp import Exp as oriExp
+from yolox.exp import Exp as MyExp
+from yolox.data import get_yolox_datadir
 
-class Exp(oriExp):
+class Exp(MyExp):
     def __init__(self):
         super(Exp, self).__init__()
 
         # ---------------- model config ---------------- #
         # detect classes number of model
-        self.num_classes = 3
+        self.num_classes = 1
         # factor of model depth
-        self.depth = 0.33
+        self.depth = 0.67
         # factor of model width
-        self.width = 0.50
-
+        self.width = 0.75
+        
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time
         # If your training process cost many memory, reduce this value.
         self.data_num_workers = 4
-        self.input_size = (608, 1088)  # (height, width)
+        # self.input_size = (800, 1440)  # (height, width)
+        self.input_size = (640, 640)  # (height, width)
         # Actual multiscale ranges: [640 - 5 * 32, 640 + 5 * 32].
         # To disable multiscale training, set the value to 0.
-        self.multiscale_range = 5
+        # self.multiscale_range = 5
         # You can uncomment this line to specify a multiscale range
-        # self.random_size = (14, 26)
+        # self.random_size = (18, 32)
         # dir of dataset images, if data_dir is None, this project will use `datasets` dir
-        self.data_dir = osp.join(__proot__, "mask", "dataset")
+        self.data_dir = "/datasets/mix_det"
         # name of annotation file for training
         self.train_ann = "train.json"
         # name of annotation file for evaluation
-        self.val_ann = "val.json"
+        self.val_ann = "train.json"
         # name of annotation file for testing
-        self.test_ann = "test_coco.json"
-
+        self.test_ann = "val.json"
+        
         # --------------  training config --------------------- #
         # epoch number used for warmup
-        self.warmup_epochs = 10
+        self.warmup_epochs = 5
         # max training epoch
-        self.max_epoch = 1000
+        self.max_epoch = 80
+        # minimum learning rate during warmup
+        self.warmup_lr = 0
+        self.min_lr_ratio = 0.05
+        # learning rate for one image. During training, lr will multiply batchsize.
+        self.basic_lr_per_img = 0.01 / 64.0
+        # last #epoch to close augmention like mosaic
+        self.no_aug_epochs = 15
+
         # log period in iter, for example,
         # if set to 1, user could see log every iteration.
-        self.print_interval = 10
+        self.print_interval = 20
         # eval period in epoch, for example,
         # if set to 1, model will be evaluate after every epoch.
-        self.eval_interval = 20
+        self.eval_interval = 10
         # save history checkpoint or not.
         # If set to False, yolox will only save latest and best ckpt.
         self.save_history_ckpt = False
+        # name of experiment
+        self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
         # -----------------  testing config ------------------ #
         # output image size during evaluation/test
-        self.test_size = (608, 1088)
+        # self.test_size = (800, 1440)
+        self.test_size = (640, 640)
         # confidence threshold during evaluation/test,
         # boxes whose scores are less than test_conf will be filtered
-        self.test_conf = 0.01
+        self.test_conf = 0.001
         # nms threshold
         self.nmsthre = 0.7
 
+        # -----------------  output config  ------------------ #
+        self.output_dir = '/BRA/pretrain/training'
+
     def get_data_loader(self, batch_size, is_distributed, no_aug=False, cache_img=False):
-        from ..data import FMDetection
         from yolox.data import (
+            COCODataset,
             TrainTransform,
             YoloBatchSampler,
             DataLoader,
@@ -73,9 +91,10 @@ class Exp(oriExp):
         from yolox.utils import wait_for_the_master
 
         with wait_for_the_master():
-            dataset = FMDetection(
+            dataset = COCODataset(
+                name='',
                 data_dir=self.data_dir,
-                mode="train",
+                json_file=self.train_ann,
                 img_size=self.input_size,
                 preproc=TrainTransform(
                     max_labels=50,
@@ -128,13 +147,13 @@ class Exp(oriExp):
         return train_loader
 
     def get_eval_loader(self, batch_size, is_distributed, testdev=False, legacy=False):
-        from ..data import FMDetection
-        from yolox.data import ValTransform
+        from yolox.data import COCODataset, ValTransform
 
-        valdataset = FMDetection(
+        valdataset = COCODataset(
             data_dir=self.data_dir,
-            mode="val" if not testdev else "test",
-            img_size=self.input_size,
+            json_file=self.val_ann if not testdev else self.test_ann,
+            name="" if not testdev else "",
+            img_size=self.test_size,
             preproc=ValTransform(legacy=legacy),
         )
 
@@ -156,15 +175,4 @@ class Exp(oriExp):
 
         return val_loader
 
-    def get_evaluator(self, batch_size, is_distributed, testdev=False, legacy=False):
-        from yolox.evaluators import VOCEvaluator
-
-        val_loader = self.get_eval_loader(batch_size, is_distributed, testdev, legacy)
-        evaluator = VOCEvaluator(
-            dataloader=val_loader,
-            img_size=self.test_size,
-            confthre=self.test_conf,
-            nmsthre=self.nmsthre,
-            num_classes=self.num_classes,
-        )
-        return evaluator
+    # use default coco evaluator

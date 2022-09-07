@@ -1,9 +1,10 @@
 mask:
   device: 'cuda:0'
-  exp: '/BRA/mask/exp/FaceMask_m.py'
+  exp: '/BRA/exps/FaceMask_m.py'
   checkpoint: '/BRA/pretrain/FMD_m1k.pth'
   fp16: True
   fuse: True
+  legacy: False
 
 track_opt: &pt
   track_thresh: 0.5
@@ -23,6 +24,7 @@ person:
   checkpoint: '/BRA/pretrain/bytetrack_m_mot17.pth.tar'
   fp16: True
   fuse: True
+  legacy: True
   track_opt: *pt
   reid_opt: *ptreid
 

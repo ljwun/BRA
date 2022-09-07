@@ -15,8 +15,6 @@ sys.path.append(osp.join(__proot__, "third_party", "ByteTrack", "yolox"))
 
 from pipe_block import FrameCenter
 import compute_block as cmb
-from mask.checker import MaskChecker
-from detect import Detector
 from tracker.byte_tracker import BYTETracker
 from track.byte_tracker_reid import BYTETracker_reid
 from track.reid import AppearanceExtractor
@@ -24,6 +22,7 @@ from distance.mapping import Mapper
 from distance.visual import WarningLine
 from scipy.spatial.distance import cdist
 from pipe_block import EventFilter
+from pipe_block import Detector
 
 from .BaseWorker import BaseWorker
 
@@ -49,19 +48,23 @@ class Worker(BaseWorker):
             self.fps = actual_framerate
         self.reid = reid
 
-        self.MDetector = MaskChecker(
+        self.MDetector = Detector(
             device=self.config['mask']['device'],
             exp_path=self.config['mask']['exp'],
             checkpoint=self.config['mask']['checkpoint'],
             fuse=self.config['mask']['fuse'],
-            fp16=self.config['mask']['fp16']
+            fp16=self.config['mask']['fp16'],
+            cls_name=("without_mask", "with_mask", "mask_wear_incorrect"),
+            legacy=self.config['mask']['legacy']
         )
         self.PDetector = Detector(
             device=self.config['person']['device'],
             exp_path=self.config['person']['exp'],
             checkpoint=self.config['person']['checkpoint'],
             fuse=self.config['person']['fuse'],
-            fp16=self.config['person']['fp16']
+            fp16=self.config['person']['fp16'],
+            cls_name=('person'),
+            legacy=self.config['person']['legacy']
         )
         track_parameter = {
             "track_thresh":self.config['track_opt']['track_thresh'],

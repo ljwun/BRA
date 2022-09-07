@@ -2,7 +2,7 @@ import torch
 import os.path as osp
 import sys
 
-__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 from yolox.exp import Exp as oriExp
 
 class Exp(oriExp):
@@ -13,9 +13,9 @@ class Exp(oriExp):
         # detect classes number of model
         self.num_classes = 3
         # factor of model depth
-        self.depth = 0.67
+        self.depth = 0.33
         # factor of model width
-        self.width = 0.75
+        self.width = 0.50
 
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time

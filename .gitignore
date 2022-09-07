@@ -13,7 +13,7 @@ tmp/
 
 # large file
 pretrain/*
-*/dataset/*
+dataset/*
 
 # private file (maybe unready)
 test/*

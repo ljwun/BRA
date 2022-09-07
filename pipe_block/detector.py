@@ -5,14 +5,13 @@ import torch
 import numpy as np
 import cv2
 
-import sys
-__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 from yolox.data.data_augment import ValTransform
-from yolox.utils import fuse_model, get_model_info, postprocess, vis
+from yolox.utils import fuse_model, postprocess
 from yolox.exp import get_exp
 
-class MaskChecker:
-    def __init__(self, device, exp_path, checkpoint, fuse, fp16):
+class Detector:
+    def __init__(self, device, exp_path, checkpoint, fuse, fp16, cls_name, legacy=False):
         self.device = re.match("cpu|cuda(:\d*)?", device)
         assert self.device != None, f"Cannot resolve target device string ${device}"
         self.device = self.device.group(0)
@@ -27,7 +26,7 @@ class MaskChecker:
         self.model.eval()
         ckpt = torch.load(checkpoint)
         self.model.load_state_dict(ckpt["model"])
-        self.preproc = ValTransform(legacy=False)
+        self.preproc = ValTransform(legacy=legacy)
 
         if fuse:
             self.model = fuse_model(self.model)
@@ -40,18 +39,10 @@ class MaskChecker:
         self.num_classes = self.exp.num_classes
         self.confthre = self.exp.test_conf
         self.nmsthre = self.exp.nmsthre
-        self.test_size = self.exp.test_size
 
-        from ..data import FMD_CLASSES
-        self.cls_names = FMD_CLASSES
-        self._COLORS = np.array(
-            [
-                0.000, 0.447, 0.741,
-                0.850, 0.325, 0.098,
-                0.929, 0.694, 0.125,
-                0.494, 0.184, 0.556,
-            ]
-        ).astype(np.float32).reshape(-1, 3)
+        self.test_size = self.exp.test_size
+        self.cls_names = cls_name
+        self._COLORS = _COLORS
 
     def detect(self, imgs):
         if not isinstance(imgs, list):
@@ -128,3 +119,88 @@ class MaskChecker:
                 'score':score,
             })
         return format_out
+
+_COLORS = np.array(
+    [
+        0.000, 0.447, 0.741,
+        0.850, 0.325, 0.098,
+        0.929, 0.694, 0.125,
+        0.494, 0.184, 0.556,
+        0.466, 0.674, 0.188,
+        0.301, 0.745, 0.933,
+        0.635, 0.078, 0.184,
+        0.300, 0.300, 0.300,
+        0.600, 0.600, 0.600,
+        1.000, 0.000, 0.000,
+        1.000, 0.500, 0.000,
+        0.749, 0.749, 0.000,
+        0.000, 1.000, 0.000,
+        0.000, 0.000, 1.000,
+        0.667, 0.000, 1.000,
+        0.333, 0.333, 0.000,
+        0.333, 0.667, 0.000,
+        0.333, 1.000, 0.000,
+        0.667, 0.333, 0.000,
+        0.667, 0.667, 0.000,
+        0.667, 1.000, 0.000,
+        1.000, 0.333, 0.000,
+        1.000, 0.667, 0.000,
+        1.000, 1.000, 0.000,
+        0.000, 0.333, 0.500,
+        0.000, 0.667, 0.500,
+        0.000, 1.000, 0.500,
+        0.333, 0.000, 0.500,
+        0.333, 0.333, 0.500,
+        0.333, 0.667, 0.500,
+        0.333, 1.000, 0.500,
+        0.667, 0.000, 0.500,
+        0.667, 0.333, 0.500,
+        0.667, 0.667, 0.500,
+        0.667, 1.000, 0.500,
+        1.000, 0.000, 0.500,
+        1.000, 0.333, 0.500,
+        1.000, 0.667, 0.500,
+        1.000, 1.000, 0.500,
+        0.000, 0.333, 1.000,
+        0.000, 0.667, 1.000,
+        0.000, 1.000, 1.000,
+        0.333, 0.000, 1.000,
+        0.333, 0.333, 1.000,
+        0.333, 0.667, 1.000,
+        0.333, 1.000, 1.000,
+        0.667, 0.000, 1.000,
+        0.667, 0.333, 1.000,
+        0.667, 0.667, 1.000,
+        0.667, 1.000, 1.000,
+        1.000, 0.000, 1.000,
+        1.000, 0.333, 1.000,
+        1.000, 0.667, 1.000,
+        0.333, 0.000, 0.000,
+        0.500, 0.000, 0.000,
+        0.667, 0.000, 0.000,
+        0.833, 0.000, 0.000,
+        1.000, 0.000, 0.000,
+        0.000, 0.167, 0.000,
+        0.000, 0.333, 0.000,
+        0.000, 0.500, 0.000,
+        0.000, 0.667, 0.000,
+        0.000, 0.833, 0.000,
+        0.000, 1.000, 0.000,
+        0.000, 0.000, 0.167,
+        0.000, 0.000, 0.333,
+        0.000, 0.000, 0.500,
+        0.000, 0.000, 0.667,
+        0.000, 0.000, 0.833,
+        0.000, 0.000, 1.000,
+        0.000, 0.000, 0.000,
+        0.143, 0.143, 0.143,
+        0.286, 0.286, 0.286,
+        0.429, 0.429, 0.429,
+        0.571, 0.571, 0.571,
+        0.714, 0.714, 0.714,
+        0.857, 0.857, 0.857,
+        0.000, 0.447, 0.741,
+        0.314, 0.717, 0.741,
+        0.50, 0.5, 0
+    ]
+).astype(np.float32).reshape(-1, 3)

@@ -1,1 +1,0 @@
-from .AppearanceExtractor import AppearanceExtractor

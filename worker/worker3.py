@@ -16,13 +16,13 @@ sys.path.append(osp.join(__proot__, "third_party", "ByteTrack", "yolox"))
 from pipe_block import FrameCenter
 import compute_block as cmb
 from tracker.byte_tracker import BYTETracker
-from track.byte_tracker_reid import BYTETracker_reid
-from track.reid import AppearanceExtractor
 from distance.mapping import Mapper
 from distance.visual import WarningLine
 from scipy.spatial.distance import cdist
 from pipe_block import EventFilter
 from pipe_block import Detector
+from pipe_block import AppearanceExtractor
+from pipe_block import BYTETracker_reid
 
 from .BaseWorker import BaseWorker
 

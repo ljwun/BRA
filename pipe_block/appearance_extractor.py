@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 
-__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 sys.path.append(osp.join(__proot__,  "third_party", "fast-reid"))
 

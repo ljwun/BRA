@@ -23,7 +23,7 @@ from track.reid import AppearanceExtractor
 from distance.mapping import Mapper
 from distance.visual import WarningLine
 from scipy.spatial.distance import cdist
-from wash_hand import EventFilter
+from pipe_block import EventFilter
 
 from .BaseWorker import BaseWorker
 

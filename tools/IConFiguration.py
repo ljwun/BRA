@@ -23,7 +23,7 @@ console = Console()
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 from distance.mapping import Mapper
-from wash_hand import Polygon_Extension
+from compute_block import PolygonExtension
 
 def make_parser():
     parser = argparse.ArgumentParser("pre/re-configure BRA system")
@@ -62,7 +62,7 @@ def onclick(marks, mark_info, polygon, polygon_info, texts, ax, base_scale = 1, 
                     )
                     ax.add_patch(polygon[0])
                     if ext is not None and ext > 0:
-                        ext_marks = Polygon_Extension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
+                        ext_marks = PolygonExtension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
                         polygon[1] = Polygon(
                             [(p['x'], p['y']) for p in ext_marks],
                             color=polygon_info[1]['color'], 
@@ -91,7 +91,7 @@ def onclick(marks, mark_info, polygon, polygon_info, texts, ax, base_scale = 1, 
                 )
                 ax.add_patch(polygon[0])
                 if ext is not None and ext > 0:
-                    ext_marks = Polygon_Extension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
+                    ext_marks = PolygonExtension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
                     polygon[1] = Polygon(
                         [(p['x'], p['y']) for p in ext_marks],
                         color=polygon_info[1]['color'], 
@@ -177,7 +177,7 @@ def uiMark(background, title, default=None, fn=None, ext=None):
             )
             ax.add_patch(polygon[0])
             if ext is not None and ext > 0:
-                ext_marks = Polygon_Extension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
+                ext_marks = PolygonExtension([{'x':p.center[0], 'y':p.center[1]} for p in marks], ext)
                 polygon[1] = Polygon(
                     [(p['x'], p['y']) for p in ext_marks],
                     color=polygon_info[1]['color'], 

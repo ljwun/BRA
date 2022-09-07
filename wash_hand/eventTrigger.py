@@ -1,18 +1,13 @@
 import pandas as pd
 import yaml
-import numpy as np
 from numpy import isnan
 import cv2
-from shapely.geometry import MultiPoint
+import sys
+import os.path as osp
 
-def Polygon_Extension(xys, ext_pixel):
-    ori_zone = [(p['x'], p['y']) for p in xys]
-    centroid = MultiPoint(ori_zone).convex_hull.centroid
-    cx, cy = centroid.x, centroid.y
-    out_vector = np.asarray([(p['x']-cx, p['y']-cy)for p in xys])
-    out_vector = out_vector / np.linalg.norm(out_vector, axis=1, keepdims=True) * ext_pixel
-    ext_zone = np.asarray(ori_zone) + out_vector
-    return [{'x':xy[0], 'y':xy[1]} for xy in ext_zone]
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
+sys.path.append(__proot__)
+from compute_block import PolygonExtension
 
 class TriggerNode:
     def __init__(self, triggers):
@@ -130,7 +125,7 @@ class EventFilter:
         '''
         relay = []
         if relay_ext is not None:
-            buffer_zone = Polygon_Extension(fence, relay_ext)
+            buffer_zone = PolygonExtension(fence, relay_ext)
         def instanceFence(objs, filtered_result):
             nonlocal relay
             result = []

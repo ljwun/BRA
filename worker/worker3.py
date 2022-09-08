@@ -16,9 +16,7 @@ sys.path.append(osp.join(__proot__, "third_party", "ByteTrack", "yolox"))
 from pipe_block import FrameCenter
 import compute_block as cmb
 from tracker.byte_tracker import BYTETracker
-from distance.mapping import Mapper
-from distance.visual import WarningLine
-from scipy.spatial.distance import cdist
+from distance.mapping import IPMer
 from pipe_block import EventFilter
 from pipe_block import Detector
 from pipe_block import AppearanceExtractor
@@ -83,7 +81,7 @@ class Worker(BaseWorker):
             )
         else:
             self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
-        self.mapper = Mapper(view_cfg)
+        self.ipmer = IPMer(view_cfg)
         self.washFilter = EventFilter(view_cfg, self.config['general']['record_life'], self.fps)
 
         self.person_count_metrics = cmb.ACBlock(
@@ -186,15 +184,11 @@ class Worker(BaseWorker):
             bottom_center_points = np.asarray(
                 [(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in t_person]
             )
-            IPM_points = self.mapper.points_warp(bottom_center_points)
-            if bottom_center_points.shape[0] != 0:
-                distance = cdist(IPM_points, IPM_points, 'euclidean')
-            else:
-                distance = np.zeros(0)
+            distance = self.ipmer.calc_bev_distance(bottom_center_points)
             social_distance.append(distance.sum() / 2)
-            distance_segment_count.append(IPM_points.shape[0] * (IPM_points.shape[0]-1) / 2)
-            WarningLine(frame, bottom_center_points, distance, (0, 0, 255), 6, 0, 150.0, True)
-            WarningLine(frame, bottom_center_points, distance, (0, 133, 242), 2, 150.0, 250.0)
+            distance_segment_count.append(len(bottom_center_points) * (len(bottom_center_points)-1) / 2)
+            IPMer.draw_warning_line(frame, bottom_center_points, distance, color=(0, 0, 255), thickness=6, floor=0, ceil=150.0, equal=True)
+            IPMer.draw_warning_line(frame, bottom_center_points, distance, color=(0, 133, 242), thickness=2, floor=150.0, ceil=250.0, equal=False)
             for point in bottom_center_points:
                 cv2.circle(
                     frame, 

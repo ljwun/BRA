@@ -1,8 +1,9 @@
 import yaml
 import numpy as np
 import cv2
+from scipy.spatial.distance import cdist
 
-class Mapper:
+class IPMer:
     def __init__(self, configPath):
         # loading yaml config file
         configStream = open(configPath, 'r')
@@ -40,3 +41,38 @@ class Mapper:
             IPM_point[i, 0] = int((M[0, 0] * x + M[0, 1] * y + M[0, 2]) / d)
             IPM_point[i, 1] = int((M[1, 0] * x + M[1, 1] * y + M[1, 2]) / d)
         return IPM_point
+    
+    def calc_bev_distance(self, points):
+        if len(points) == 0:
+            return np.zeros(0)
+        ipm_points = self.points_warp(points)
+        return cdist(ipm_points, ipm_points, 'euclidean')
+
+    @staticmethod
+    def draw_warning_line(
+        frame,
+        points, distance, 
+        floor=None, ceil=None, equal=False,
+        color=(0,0,0), thickness=3
+    ):
+        if len(points) == 0:
+            return
+        ceil_table = np.full_like(distance, True, dtype=bool)
+        floor_table = np.full_like(distance, True, dtype=bool)
+        if ceil is not None:
+            ceil_table = distance <= ceil if equal else distance < ceil
+        if floor is not None:
+            floor_table = distance >= floor if equal else distance > floor
+        filtered = np.where(ceil_table & floor_table)
+        edges = []
+        for i in range(filtered[0].shape[0]):
+            if filtered[1][i] > filtered[0][i]:
+                edges.append((filtered[0][i], filtered[1][i]))
+        
+        for edge in edges:
+            cv2.line(frame,
+                np.int32(points[edge[0]]),
+                np.int32(points[edge[1]]),
+                color,
+                thickness
+            )

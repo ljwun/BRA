@@ -36,11 +36,16 @@ class Worker(BaseWorker):
         reid=False,
         start_frame=None,
         batch_size=1,
+        enable_track=None
     ):
         super().__init__()
         configStream = open(worker_cfg, 'r')
         self.config = yaml.safe_load(configStream)
         configStream.close()
+        if 'enable' not in self.config['track_opt'] and enable_track is None:
+            self.config['track_opt']['enable'] = True
+        elif enable_track is not None:
+            self.config['track_opt']['enable'] = enable_track
 
         self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_frame=start_frame)
         self.fps = self.FCenter.Metadata['fps']
@@ -54,7 +59,7 @@ class Worker(BaseWorker):
             checkpoint=self.config['mask']['checkpoint'],
             fuse=self.config['mask']['fuse'],
             fp16=self.config['mask']['fp16'],
-            cls_name=("without_mask", "with_mask", "mask_wear_incorrect"),
+            cls_name=["without_mask", "with_mask", "mask_wear_incorrect"],
             legacy=self.config['mask']['legacy']
         )
         self.PDetector = Detector(
@@ -63,7 +68,7 @@ class Worker(BaseWorker):
             checkpoint=self.config['person']['checkpoint'],
             fuse=self.config['person']['fuse'],
             fp16=self.config['person']['fp16'],
-            cls_name=('person'),
+            cls_name=['person'],
             legacy=self.config['person']['legacy']
         )
         track_parameter = {
@@ -74,7 +79,9 @@ class Worker(BaseWorker):
             "min_box_area":self.config['track_opt']['min_box_area'],
             "mot20":False,
         }
-        if self.reid:
+        if not self.config['track_opt']['enable']:
+            self.byteTracker = None
+        elif self.reid:
             self.byteTracker = BYTETracker_reid(type('',(object,),track_parameter)(), frame_rate=self.fps)
             self.appearanceExtractor = AppearanceExtractor(
                 device=self.config['person']['reid_opt']['device'],
@@ -121,36 +128,45 @@ class Worker(BaseWorker):
         packet['m_infos'] = mask_infos
 
         # [LEVEL_2_BLOCK] === INPUT -> LEVEL_1_PERSON_BLOCK result
-        tracked_person = []
-        for frame, p_output, p_info in zip(packet['frames'], packet['p_outputs'], packet['p_infos']):
-            if p_output is None:
-                tracked_person.append([])
-                continue
-            if self.reid:
-                feats = self.appearanceExtractor.extract_with_crop(frame, p_output, 0.1)
-                tracked_person.append(
-                    copy.deepcopy(
-                        self.byteTracker.update(
-                            p_output, 
-                            [p_info['height'], p_info['width']], 
-                            self.PDetector.test_size,
-                            feats
+        if self.config['track_opt']['enable']:
+            tracked_person = []
+            for frame, p_output, p_info in zip(packet['frames'], packet['p_outputs'], packet['p_infos']):
+                if p_output is None:
+                    tracked_person.append([])
+                    continue
+                if self.reid:
+                    feats = self.appearanceExtractor.extract_with_crop(frame, p_output, 0.1)
+                    tracked_person.append(
+                        copy.deepcopy(
+                            self.byteTracker.update(
+                                p_output, 
+                                [p_info['height'], p_info['width']], 
+                                self.PDetector.test_size,
+                                feats
+                            )
                         )
                     )
-                )
-            else:
-                tracked_person.append(
-                    copy.deepcopy(
-                        self.byteTracker.update(
-                            p_output, 
-                            [p_info['height'], p_info['width']], 
-                            self.PDetector.test_size
+                else:
+                    tracked_person.append(
+                        copy.deepcopy(
+                            self.byteTracker.update(
+                                p_output, 
+                                [p_info['height'], p_info['width']], 
+                                self.PDetector.test_size
+                            )
                         )
+                        
                     )
-                    
-                )
-        packet['tracked_person'] = tracked_person
-        packet['crowd_count'] = [len(t_person) for t_person in tracked_person]
+            packet['tracked_person'] = tracked_person
+            packet['crowd_count'] = [len(t_person) for t_person in tracked_person]
+        else:
+            packet['tracked_person'] = [
+                self.PDetector.output_tidy(
+                    p_output.cpu().numpy(), p_info, 
+                    self.config['track_opt']['match_thresh']
+                )['person']
+            for p_output, p_info in zip(person_outputs, person_infos)]
+            packet['crowd_count'] = [len(person) for person in packet['tracked_person']]
 
         mask_wearing_count, no_mask_count = [], []
         for frame, m_output, m_info in zip(packet['frames'], packet['m_outputs'], packet['m_infos']):
@@ -171,11 +187,13 @@ class Worker(BaseWorker):
         # (HAND)
         no_hand_washing_count, hand_washing_wrong_count, hand_washing_correct_count = [], [], []
         for frame, t_person in zip(packet['frames'], packet['tracked_person']):
-            notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.washFilter.work(t_person)
+            notWashIds, wrongWashIds, correctWashIds = [], [], []
+            if self.config['track_opt']['enable']:
+                notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.washFilter.work(t_person)
+                self.washFilter.visualize(frame, t_person)
             no_hand_washing_count.append(len(notWashIds))
             hand_washing_wrong_count.append(len(wrongWashIds))
             hand_washing_correct_count.append(len(correctWashIds))
-            self.washFilter.visualize(frame, t_person)
         packet['no_hand_washing_count'] = no_hand_washing_count
         packet['hand_washing_wrong_count'] = hand_washing_wrong_count
         packet['hand_washing_correct_count'] = hand_washing_correct_count
@@ -183,9 +201,14 @@ class Worker(BaseWorker):
         # (DISTANCE)
         social_distance, distance_segment_count = [], []
         for frame, t_person in zip(packet['frames'], packet['tracked_person']):
-            bottom_center_points = np.asarray(
-                [(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in t_person]
-            )
+            if self.config['track_opt']['enable']:
+                bottom_center_points = np.asarray(
+                    [(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in t_person]
+                )
+            else:
+                bottom_center_points = np.asarray(
+                    [((p['bbox'][0]+p['bbox'][2])/2, p['bbox'][3]) for p in t_person]
+                )
             distance = self.ipmer.calc_bev_distance(bottom_center_points)
             social_distance.append(distance.sum() / 2)
             distance_segment_count.append(len(bottom_center_points) * (len(bottom_center_points)-1) / 2)
@@ -234,13 +257,16 @@ class Worker(BaseWorker):
             p_crowdCount, is_new = self.person_count_metrics.step(crowdCount, 1)
             p_dist, _ = self.distance_metrics.step(sdist, distSegN)
             p_mask_ratio, _ = self.mask_metrics.step(maskCount, maskCount+noMaskCount)
-            p_wash, _ = self.wash_correct_metrics.step(correctWashCount, noWashCount+wrongWashCount+correctWashCount)
+            if self.config['track_opt']['enable']:
+                p_wash, _ = self.wash_correct_metrics.step(correctWashCount, noWashCount+wrongWashCount+correctWashCount)
+            else:
+                p_wash = -1
             texts = [
                 f'Period-time',
                 f'+ Person Count: {p_crowdCount:.2f}',
                 f'+ Social Distance: {p_dist / 100:.2f} m',
                 f'+ Mask Ratio: {p_mask_ratio * 100:.2f}%',
-                f'+ Correct Wash: {p_wash * 100:.2f}%',
+                f'+ Correct Wash: {f"{p_wash * 100:.2f} %" if self.config["track_opt"]["enable"] else "not support"}',
             ]
             cmb.VISBlockText(
                 frame,

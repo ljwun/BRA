@@ -5,7 +5,7 @@ import cv2
 import sys
 import os.path as osp
 
-__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
 sys.path.append(__proot__)
 from compute_block import PolygonExtension
 

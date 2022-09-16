@@ -5,7 +5,7 @@ import torch
 import numpy as np
 import cv2
 
-__proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
 from yolox.data.data_augment import ValTransform
 from yolox.utils import fuse_model, postprocess
 from yolox.exp import get_exp
@@ -72,12 +72,12 @@ class Detector:
             )
         return outputs, imgs_info
     
-    def visual_rp(self, frame, mask_outputs, mask_info, cls_conf=0.5, color_map=None):
+    def visual_rp(self, frame, outputs, info, cls_conf=0.5, color_map=None):
         color_map = self._COLORS if color_map is None else color_map
         for box, score, pred_class in zip(
-            mask_outputs[:, 0:4]/mask_info["ratio"], 
-            mask_outputs[:, 4] * mask_outputs[:, 5],
-            mask_outputs[:, 6]
+            outputs[:, 0:4]/info["ratio"], 
+            outputs[:, 4] * outputs[:, 5],
+            outputs[:, 6]
         ):
             if score < cls_conf:
                 continue
@@ -100,14 +100,14 @@ class Detector:
             cv2.putText(frame, text, (xmin, ymin+txt_size[1]), font, 0.7, txt_color, thickness=1)
         return
     
-    def output_tidy(self, mask_outputs, mask_info, cls_conf=0.5):
+    def output_tidy(self, outputs, info, cls_conf=0.5):
         format_out = {}
         for clsE in self.cls_names:
             format_out[clsE] = []
         for box, score, pred_class in zip(
-            mask_outputs[:, 0:4]/mask_info["ratio"], 
-            mask_outputs[:, 4] * mask_outputs[:, 5],
-            mask_outputs[:, 6]
+            outputs[:, 0:4]/info["ratio"], 
+            outputs[:, 4] * outputs[:, 5],
+            outputs[:, 6]
         ):
             if score < cls_conf:
                 continue

@@ -65,7 +65,7 @@ class Detector:
         with torch.no_grad():
             t0 = time.time()
             outputs = self.model(imgs)
-            logger.info("Infer time: {:.4f}s".format(time.time() - t0))
+            logger.trace("Infer time: {:.4f}s".format(time.time() - t0))
             outputs = postprocess(
                 outputs, self.num_classes, self.confthre,
                 self.nmsthre, class_agnostic=True

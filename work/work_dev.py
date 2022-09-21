@@ -9,6 +9,8 @@ import re
 import math
 import importlib
 import csv
+import datetime
+from loguru import logger
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
@@ -113,56 +115,51 @@ def make_parser():
         type=int, default=1,
         help='batch size for working with pipe'
     )
+    parser.add_argument(
+        '--legacy',
+        action='store_true',
+        help='enable legacy mode to work on single input'
+    )
+    parser.add_argument(
+        '--log_level',
+        type=str, default='INFO',
+        help='level for logger of work'
+    )
     return parser
 
-if __name__ == "__main__":
+def make_ffmpeg_process(shape, fps, encoder, destination, log):
+    command = ['ffmpeg',
+        '-y', '-an',
+        '-f', 'rawvideo',
+        '-vcodec','rawvideo',
+        '-pix_fmt', 'bgr24',
+        '-s', f'{shape[0]}x{shape[1]}',
+        '-r', f'{fps}',
+        '-i', '-'
+    ]
+    target = destination.split('://') 
+    if len(target)>1:
+        stream_format = 'flv' if target[0]=='rtmp' else target[0]
+        command.extend(['-f', f'{stream_format}'])
+    command.extend(
+        [
+            '-vcodec', encoder,
+            destination
+        ]
+    )
+    logger.debug(f'ffmpeg command is: {command}')
+    return subprocess.Popen(
+        command, shell=False, 
+        stdin=subprocess.PIPE,
+        stdout=log, stderr=log
+    )
+
+@logger.catch
+def main():
     args = make_parser().parse_args()
 
-    test_size = 11
-    frame_buffer = []
-    # framerate estimate
-    if args.fps is None:
-        cap = cv2.VideoCapture(args.video_input)
-        if not cap.isOpened():
-            raise Exception(f'Could not open file "{args.video_input}"!')
-        framerate = None
-        for i in range(test_size):
-            ret, frame = cap.read()
-            frame_buffer.append(frame)
-            if i == 0:
-                start = (
-                    cap.get(cv2.CAP_PROP_POS_FRAMES),
-                    cap.get(cv2.CAP_PROP_POS_MSEC)
-                )
-            if i == test_size - 1:
-                p = cap.get(cv2.CAP_PROP_POS_FRAMES)
-                t = cap.get(cv2.CAP_PROP_POS_MSEC)
-                framerate = (p-start[0]) / (t-start[1]) * 1000.0
-        cap.release()
-        print(f'estimate framerate is : {framerate}')
-    else:
-        framerate = args.fps
-        print(f'framerate is : {framerate}')
-    frame_limit = None if args.duration is None else round(args.duration * framerate) 
-    start_frame = math.floor(args.start_second*framerate) if args.start_second is not None else None
-
-    Worker = importlib.import_module(args.worker_file).Worker
-    worker = Worker(
-        vin_path=args.video_input,
-        view_cfg=args.view_config,
-        worker_cfg=args.worker_config,
-        actual_framerate = framerate,
-        reid=args.reid,
-        start_frame = start_frame,
-        batch_size=args.batch_size
-    )
-
-    source_size = (
-        int(worker.FCenter.Metadata['width']),
-        int(worker.FCenter.Metadata['height'])
-    )
-    print(f'source_size : {source_size}')
-    stored_size = source_size
+    logger.remove()
+    logger.add(sys.stdout, level=args.log_level)
     if args.output_scale is not None:
         try:
             if re.match(
@@ -173,106 +170,157 @@ if __name__ == "__main__":
             size = args.output_scale.split(':')
             if size[0] == size[1] == '(-1)':
                 raise
-            stored_size = (int(size[0][1:-1]), int(size[1][1:-1]))
-            if stored_size[0] == -1:
-                ratio = stored_size[1] / source_size[1]
-                stored_size = (
-                    int(source_size[0] * ratio),
-                    stored_size[1]
-                )
-            elif stored_size[1] == -1:
-                ratio = stored_size[0] / source_size[0]
-                stored_size = (
-                    stored_size[0],
-                    int(source_size[1] * ratio)
-                )
-            print(f"stored_size : {stored_size}")
+            args.output_scale = (int(size[0][1:-1]), int(size[1][1:-1]))
         except:
             raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
-    shouldResize = source_size != stored_size
+    if args.legacy is not None:
+        logger.warning('Legacy is enable!')
 
-    # estimate record
+    Worker = importlib.import_module(args.worker_file).Worker
+    worker = Worker(
+        vin_path=args.video_input,
+        view_cfg=args.view_config,
+        worker_cfg=args.worker_config,
+        actual_framerate = args.fps,
+        reid=args.reid,
+        start_second = args.start_second,
+        batch_size=args.batch_size
+    )
+
+
+    # default
+    stored_size = None
+    null_frame = None
     raw_data_record = []
     short_data_record = []
+    time_point = None
+    delta_time = None
+    time_metrics = {'delta':0.0, 'frameN':0}
 
-    # worker_analysis
-    round_times = np.zeros(test_size)
-    fids_bfr, frames_bfr = [], []
-    worker_iter = iter(worker)
-    for i in range(11):
-        t0 = time.time()
-        fids, frames, raw_data, short_data = next(worker_iter)
-        if shouldResize:
-            frames = [cv2.resize(f, stored_size) for f in frames]
-        round_times[i] = time.time() - t0
-        fids_bfr += fids
-        frames_bfr += frames
-        raw_data_record += raw_data
-        short_data_record += short_data
-    worker_process_rate = args.batch_size / round_times[1:].mean()
-
-
-    if args.video_output is None:
-        vwriter_process = None
-    else:
-        command = ['ffmpeg',
-            '-y', '-an',
-            '-f', 'rawvideo',
-            '-vcodec','rawvideo',
-            '-pix_fmt', 'bgr24',
-            '-s', f'{stored_size[0]}x{stored_size[1]}',
-            '-r', f'{worker.fps}',
-            '-i', '-',
-            '-vcodec', args.output_encoder,
-            args.video_output
-        ]
+    if args.video_output is not None:
         vwriter_logFile = open(args.vout_log, 'w')
-        vwriter_process = subprocess.Popen(
-            command, shell=False, 
-            stdin=subprocess.PIPE,
-            stdout=vwriter_logFile, stderr=vwriter_logFile
-        )
+    vwriter_process = None
     
     if args.stream_output is None:
         ffmpeg_process = None
     else:
-        command = ['ffmpeg',
-            '-y', '-an',
-            '-f', 'rawvideo',
-            '-vcodec','rawvideo',
-            '-pix_fmt', 'bgr24',
-            '-s', f'{stored_size[0]}x{stored_size[1]}',
-            '-r', f'{worker_process_rate}',
-            '-i', '-',
-            '-vcodec', args.output_encoder,
-            '-f', 'rtsp',
-            args.stream_output
-        ]
         stream_logFile = open(args.stream_log, 'w')
-        ffmpeg_process = subprocess.Popen(
-            command, shell=False, 
-            stdin=subprocess.PIPE,
-            stdout=stream_logFile, stderr=stream_logFile
-        )
+        ffmpeg_process = None
     
-    print(f'Working FPS is : {worker_process_rate}')
-    for fid, frame in zip(fids_bfr, frames_bfr):
-        print(f"Now is => [ {fid / worker.fps} ]", end='\r')
-        if ffmpeg_process is not None:
-            ffmpeg_process.stdin.write(frame.data.tobytes())
-        if vwriter_process is not None:
-            vwriter_process.stdin.write(frame.data.tobytes())
-    print('\nstart working!!!')
+    if args.write_to_csv is not None:
+        short_csv = None
+        full_csv = None
     
     try:
         should_stop = False
-        for fids, frames, raw_data, short_data in worker:
-            if should_stop:
+        for result in worker:
+            if should_stop and args.legacy:
                 break
+            if result is None:
+                events = worker.receive_signal()
+                logger.trace(f'receive events is : {events}')
+                if args.legacy and not worker.on and len(events)==0:
+                    raise Exception(f'Could not open file "{args.video_input}" for legacy mode')
+                if 'LOSS_CAPTURE' in events:
+                    logger.info('[LOSS_CAPTURE] signal was received.')
+                    if vwriter_process is not None:
+                        vwriter_process.stdin.close()
+                        vwriter_process.wait()
+                    if args.write_to_csv is not None:
+                        if len(short_data_record) < 1 or len(raw_data_record) < 1:
+                            logger.warning('Worker may not support result recording.')
+                        else:
+                            writer = csv.DictWriter(short_csv, fieldnames=list(short_data_record[0].keys()))
+                            writer.writeheader()
+                            writer.writerows(short_data_record)
+                            short_csv.close()
+                            short_csv = None
+                            writer = csv.DictWriter(full_csv, fieldnames=list(raw_data_record[0].keys()))
+                            writer.writeheader()
+                            writer.writerows(raw_data_record)
+                            full_csv.close()
+                            full_csv = None
+                    if args.legacy:
+                        break
+                elif 'GET_CAPTURE' in events:
+                    time_point = None
+                    should_stop = False
+                    logger.info('[GET_CAPTURE] signal was received.')
+                    frame_limit = None if args.duration is None else round(args.duration * worker.fps)
+                    logger.info(f'Work will stop after {frame_limit} processed frame.')
+                    source_size = (
+                        int(worker.FCenter.Metadata['width']),
+                        int(worker.FCenter.Metadata['height'])
+                    )
+                    logger.debug(f'Capture dimension is : {source_size}')
+                    if stored_size is None:
+                        if args.output_scale is None:
+                            stored_size = source_size
+                        else:
+                            if args.output_scale[0] == -1:
+                                ratio = args.output_scale[1] / source_size[1]
+                                stored_size = (
+                                    int(source_size[0] * ratio),
+                                    args.output_scale[1]
+                                )
+                            elif args.output_scale[1] == -1:
+                                ratio = args.output_scale[0] / source_size[0]
+                                stored_size = (
+                                    args.output_scale[0],
+                                    int(source_size[1] * ratio)
+                                )
+                            else:
+                                stored_size = args.output_size
+                        null_frame = np.zeros((stored_size[1], stored_size[0], 3), np.uint8)
+                        _text_size = cv2.getTextSize('WAIT SIGNAL...', cv2.FONT_HERSHEY_SIMPLEX, 6, 7)[0]
+                        _pos = ((stored_size[0] - _text_size[0]) // 2 , (stored_size[1] + _text_size[1]) // 2)
+                        cv2.putText(null_frame, 'WAIT SIGNAL...', _pos, cv2.FONT_HERSHEY_SIMPLEX, 6, (255, 255, 255), 7)
+                        null_frame = null_frame.tobytes()
+                        logger.debug(f'Decide result dimension is {stored_size}.')
+                    shouldResize = source_size != stored_size
+
+                    datetime_tag = datetime.datetime.now().strftime(r'%Y%m%d_%H%M')
+                    if args.video_output is not None:
+                        vwriter_filename = f'{args.video_output}{datetime_tag}.mkv' if not args.legacy else args.video_output
+                        vwriter_process = make_ffmpeg_process(stored_size, args.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
+                        logger.info(f'Decide the name of save video is : {vwriter_filename}')
+                    if args.write_to_csv is not None:
+                        short_table_name = f'{args.write_to_csv}{datetime_tag}.csv' if not args.legacy else args.write_to_csv
+                        short_csv = open(short_table_name, 'w', newline='')
+                        logger.info(f'Decide the name of simple csv is : {short_table_name}')
+                        full_table_name = osp.normpath(osp.join(osp.dirname(short_table_name), f'[raw]{osp.basename(short_table_name)}'))
+                        full_csv = open(full_table_name, 'w', newline='')
+                        logger.info(f'Decide the name of complete csv is : {full_table_name}')
+                    if args.stream_output is not None and ffmpeg_process is None:
+                        ffmpeg_process = make_ffmpeg_process(stored_size, args.fps, args.output_encoder, args.stream_output, stream_logFile)
+                else:
+                    for _ in range(int(args.fps)):
+                        if ffmpeg_process is not None and null_frame is not None:
+                            ffmpeg_process.stdin.write(null_frame)
+                        time.sleep(1/args.fps)
+                    logger.trace(f'sleep 1 second')
+                continue
+            fids, frames, raw_data, short_data = result
             raw_data_record += raw_data
             short_data_record += short_data
-            print(f"Now is => [ {fids[0] / worker.fps} ]", end='\r')
+            if len(fids) == 1:
+                logger.trace(f'Process progress is : {fids[0] / worker.fps:.3f}')
+            else:
+                logger.trace(f'Process progress is : {fids[0] / worker.fps:.3f} to {fids[-1] / worker.fps:.3f}')
             for fid, frame in zip(fids, frames):
+                if frame_limit is not None and fid > frame_limit:
+                    should_stop = True
+                    logger.info(f'Reaching early stop => {frame_limit} frame.')
+                    break
+                # analyst time consumption
+                if time_point is not None:
+                    delta_time = time.time() - time_point
+                    time_point += delta_time
+                    time_metrics['delta'] += delta_time
+                    time_metrics['frameN'] += 1
+                else:
+                    time_point = time.time()
+
                 if shouldResize:
                     frame = cv2.resize(frame, stored_size)
                 frameBytes = frame.data.tobytes()
@@ -280,16 +328,15 @@ if __name__ == "__main__":
                     ffmpeg_process.stdin.write(frameBytes)
                 if vwriter_process is not None:
                     vwriter_process.stdin.write(frameBytes)
-                if frame_limit is not None and fid >= frame_limit:
-                    should_stop = True
-                    break
-        print('\n')
+            if time_metrics['frameN'] != 0:
+                logger.info(f'Process speed is : {time_metrics["frameN"]/time_metrics["delta"]:.4f} fps')
     except KeyboardInterrupt:
         worker._endingWork()
-        print("\nInterupt...Shutdown...ok...")
-    except:
-        raise
+        logger.debug('Interrupt the work due to KeyboardInterrupt.')
+    except Exception as e:
+        logger.error(e)
     finally:
+        logger.info('Work finished.')
         if args.stream_output is not None:
             stream_logFile.close()
         if args.video_output is not None:
@@ -300,16 +347,11 @@ if __name__ == "__main__":
         if vwriter_process is not None:
             vwriter_process.stdin.close()
             vwriter_process.wait()
-        if args.write_to_csv is not None:
-            if len(short_data_record) < 1 or len(raw_data_record) < 1:
-                print(f"Warning: worker not support result recording")
-            else:
-                with open(args.write_to_csv, 'w', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=list(short_data_record[0].keys()))
-                    writer.writeheader()
-                    writer.writerows(short_data_record)
-                raw_table_name = osp.normpath(osp.join(osp.dirname(args.write_to_csv), f'[raw]{osp.basename(args.write_to_csv)}'))
-                with open(raw_table_name, 'w', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=list(raw_data_record[0].keys()))
-                    writer.writeheader()
-                    writer.writerows(raw_data_record)
+        if args.write_to_csv:
+            if short_csv is not None and not short_csv.closed:
+                short_csv.close()
+            if full_csv is not None and not full_csv.closed:
+                full_csv.close()
+
+if __name__ == "__main__":
+    main()

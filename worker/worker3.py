@@ -34,23 +34,24 @@ class Worker(BaseWorker):
         worker_cfg,
         actual_framerate=None,
         reid=False,
-        start_frame=None,
+        start_second=None,
         batch_size=1,
         enable_track=None
     ):
-        super().__init__()
+        super().__init__(EOI=['LOSS_CAPTURE', 'GET_CAPTURE'])
         configStream = open(worker_cfg, 'r')
         self.config = yaml.safe_load(configStream)
         configStream.close()
+        self.vcfg_path = view_cfg
+
         if 'enable' not in self.config['track_opt'] and enable_track is None:
             self.config['track_opt']['enable'] = True
         elif enable_track is not None:
             self.config['track_opt']['enable'] = enable_track
 
-        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_frame=start_frame)
-        self.fps = self.FCenter.Metadata['fps']
-        if actual_framerate is not None:
-            self.fps = actual_framerate
+        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_second=start_second, fps=actual_framerate)
+        self.on = False
+        self.fps = None
         self.reid = reid
 
         self.MDetector = Detector(
@@ -71,7 +72,7 @@ class Worker(BaseWorker):
             cls_name=['person'],
             legacy=self.config['person']['legacy']
         )
-        track_parameter = {
+        self.track_parameter = {
             "track_thresh":self.config['track_opt']['track_thresh'],
             "track_buffer":self.config['track_opt']['track_buffer'],
             "match_thresh":self.config['track_opt']['match_thresh'],
@@ -79,20 +80,26 @@ class Worker(BaseWorker):
             "min_box_area":self.config['track_opt']['min_box_area'],
             "mot20":False,
         }
-        if not self.config['track_opt']['enable']:
-            self.byteTracker = None
-        elif self.reid:
-            self.byteTracker = BYTETracker_reid(type('',(object,),track_parameter)(), frame_rate=self.fps)
+        self.byteTracker = None
+        if self.reid:
             self.appearanceExtractor = AppearanceExtractor(
                 device=self.config['person']['reid_opt']['device'],
                 cfg_path=self.config['person']['reid_opt']['cfg'],
                 checkpoint=self.config['person']['reid_opt']['checkpoint']
             )
-        else:
-            self.byteTracker = BYTETracker(type('',(object,),track_parameter)(), frame_rate=self.fps)
-        self.ipmer = IPMer(view_cfg)
-        self.washFilter = EventFilter(view_cfg, self.config['general']['record_life'], self.fps)
+        self.ipmer = IPMer(self.vcfg_path)
+        self.washFilter = None
+        self.person_count_metrics = None
+        self.mask_metrics = None
+        self.distance_metrics = None
+        self.wash_correct_metrics = None
 
+    def lazy_init(self):
+        if self.config['track_opt']['enable'] and self.reid:
+            self.byteTracker = BYTETracker_reid(type('',(object,),self.track_parameter)(), frame_rate=self.fps)
+        else:
+            self.byteTracker = BYTETracker(type('',(object,),self.track_parameter)(), frame_rate=self.fps)
+        self.washFilter = EventFilter(self.vcfg_path, self.config['general']['record_life'], self.fps)
         self.person_count_metrics = cmb.ACBlock(
             self.fps*self.config['general']['metrics_duration'],
             self.fps*self.config['general']['metrics_update_time'],
@@ -109,6 +116,19 @@ class Worker(BaseWorker):
             self.fps*self.config['general']['metrics_duration'],
             self.fps*self.config['general']['metrics_update_time'],
         )
+
+    def _examWork(self):
+        if not self.FCenter.cap.isOpened():
+            self.FCenter.init_capture()
+            self.on = False
+            return False
+        if not self.on:
+            self.on = True
+            self._signal('GET_CAPTURE')
+            self.fps = self.FCenter.Metadata['fps']
+            self.lazy_init()
+            return False
+        return True
 
     def _workFlow(self, dataToWork):
         # [LEVEL_0_BLOCK]
@@ -305,13 +325,14 @@ class Worker(BaseWorker):
         # [LEVEL_5_BLOCK] === OUTPUT
         return packet['fids'], packet['frames'], packet['raw_data'], packet['short_data']
 
-    def _conditionWork(self, dataToDecide):
-        return not self.FCenter.Finished or dataToDecide > 0
+    def _conditionWork(self):
+        self.FCenter.Exit()
+        self._signal('LOSS_CAPTURE')
 
     def _preparatory(self):
         self.FCenter.Load()
         dataToWork = self.FCenter.Allocate()
-        return dataToWork, dataToWork[1]
+        return dataToWork, dataToWork[1] > 0
 
     def _endingWork(self):
         self.FCenter.Exit()

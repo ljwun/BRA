@@ -313,13 +313,6 @@ def main():
                     logger.info(f'Reaching early stop => {frame_limit} frame.')
                     break
                 # analyst time consumption
-                if time_point is not None:
-                    delta_time = time.time() - time_point
-                    time_point += delta_time
-                    time_metrics['delta'] += delta_time
-                    time_metrics['frameN'] += 1
-                else:
-                    time_point = time.time()
 
                 if shouldResize:
                     frame = cv2.resize(frame, stored_size)
@@ -328,6 +321,13 @@ def main():
                     ffmpeg_process.stdin.write(frameBytes)
                 if vwriter_process is not None:
                     vwriter_process.stdin.write(frameBytes)
+            if time_point is not None:
+                delta_time = time.time() - time_point
+                time_point += delta_time
+                time_metrics['delta'] += delta_time
+                time_metrics['frameN'] += len(fids)
+            else:
+                time_point = time.time()
             if time_metrics['frameN'] != 0:
                 logger.info(f'Process speed is : {time_metrics["frameN"]/time_metrics["delta"]:.4f} fps')
     except KeyboardInterrupt:

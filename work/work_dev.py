@@ -173,7 +173,7 @@ def main():
             args.output_scale = (int(size[0][1:-1]), int(size[1][1:-1]))
         except:
             raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
-    if args.legacy is not None:
+    if args.legacy:
         logger.warning('Legacy is enable!')
 
     Worker = importlib.import_module(args.worker_file).Worker

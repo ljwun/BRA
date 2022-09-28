@@ -11,6 +11,8 @@ import importlib
 import csv
 import datetime
 from loguru import logger
+from collections import deque
+from threading import Thread
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 
@@ -141,18 +143,75 @@ def make_ffmpeg_process(shape, fps, encoder, destination, log):
     if len(target)>1:
         stream_format = 'flv' if target[0]=='rtmp' else target[0]
         command.extend(['-f', f'{stream_format}'])
+        if stream_format == 'flv':
+            command.extend(['-flvflags','no_duration_filesize'])
     command.extend(
         [
             '-vcodec', encoder,
-            destination
+            destination,
+            '-loglevel', 'verbose'
         ]
     )
     logger.debug(f'ffmpeg command is: {command}')
+    # ref from https://stackoverflow.com/questions/5045771/python-how-to-prevent-subprocesses-from-receiving-ctrl-c-control-c-sigint
+    if sys.platform.startswith('win'):
+        return subprocess.Popen(
+            command, shell=False,
+            stdin=subprocess.PIPE,
+            stdout=log, stderr=log,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        )
+    import signal
     return subprocess.Popen(
         command, shell=False, 
         stdin=subprocess.PIPE,
-        stdout=log, stderr=log
+        stdout=log, stderr=log,
+        preexec_fn = lambda : signal.signal(signal.SIGINT, signal.SIG_IGN)
     )
+
+# define the worker processing result stream pushing for thread
+class publisher:
+    def __init__(self):
+        self.opened = False
+        self.pipe = deque()
+        self.process = None
+        self.null_frame = None
+        self.thread_worker = Thread(target=self.run)
+        self.sleep_duration = None
+
+    def start(self, shape, fps, encoder, destination, log, null_frame):
+        self.sleep_duration = 1/(fps*1.5)
+        self.process = make_ffmpeg_process(shape, fps, encoder, destination, log)
+        self.null_frame = null_frame
+        self.opened = True
+        self.thread_worker.start()
+        logger.info(f'stream publisher to {destination} is starting.')
+
+    def shutdown(self):
+        self.opened = False
+        self.thread_worker.join()
+        for _ in range(len(self.pipe)):
+            bfr = self.pipe[0]
+            self.pipe.popleft()
+            self.process.stdin.write(bfr)
+        self.process.stdin.close()
+        self.process.communicate()
+        logger.debug(f'====================thread shutdown====================')
+        logger.debug(f'kill process of {self.process.args}')
+        logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
+        logger.debug(f'subprocess status? {self.process.poll()}')
+        logger.debug(f'remain frames : {len(self.pipe)}')
+        logger.debug(f'stdin of subprocess is close? {self.process.stdin.closed}')
+        logger.debug(f'=======================================================')
+
+    def run(self):
+        bfr = None
+        while self.opened:
+            if len(self.pipe) > 0:
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                self.process.stdin.write(bfr)
+            time.sleep(self.sleep_duration)
 
 @logger.catch
 def main():
@@ -201,11 +260,9 @@ def main():
         vwriter_logFile = open(args.vout_log, 'w')
     vwriter_process = None
     
-    if args.stream_output is None:
-        ffmpeg_process = None
-    else:
+    if args.stream_output is not None:
         stream_logFile = open(args.stream_log, 'w')
-        ffmpeg_process = None
+        stream_publisher = publisher()
     
     if args.write_to_csv is not None:
         short_csv = None
@@ -291,13 +348,13 @@ def main():
                         full_table_name = osp.normpath(osp.join(osp.dirname(short_table_name), f'[raw]{osp.basename(short_table_name)}'))
                         full_csv = open(full_table_name, 'w', newline='')
                         logger.info(f'Decide the name of complete csv is : {full_table_name}')
-                    if args.stream_output is not None and ffmpeg_process is None:
-                        ffmpeg_process = make_ffmpeg_process(stored_size, args.fps, args.output_encoder, args.stream_output, stream_logFile)
+                    if args.stream_output is not None and not stream_publisher.opened:
+                        stream_publisher.start(stored_size, args.fps, args.output_encoder, args.stream_output, stream_logFile, null_frame)
                 else:
                     for _ in range(int(args.fps)):
-                        if ffmpeg_process is not None and null_frame is not None:
-                            ffmpeg_process.stdin.write(null_frame)
-                        time.sleep(1/args.fps)
+                        if stream_publisher is not None and stream_publisher.opened and null_frame is not None:
+                            stream_publisher.pipe.append(null_frame)
+                    time.sleep(1)
                     logger.trace(f'sleep 1 second')
                 continue
             fids, frames, raw_data, short_data = result
@@ -312,15 +369,15 @@ def main():
                     should_stop = True
                     logger.info(f'Reaching early stop => {frame_limit} frame.')
                     break
-                # analyst time consumption
 
                 if shouldResize:
                     frame = cv2.resize(frame, stored_size)
                 frameBytes = frame.data.tobytes()
-                if ffmpeg_process is not None:
-                    ffmpeg_process.stdin.write(frameBytes)
+                if stream_publisher is not None:
+                    stream_publisher.pipe.append(frameBytes)
                 if vwriter_process is not None:
                     vwriter_process.stdin.write(frameBytes)
+            # analyst time consumption
             if time_point is not None:
                 delta_time = time.time() - time_point
                 time_point += delta_time
@@ -330,6 +387,8 @@ def main():
                 time_point = time.time()
             if time_metrics['frameN'] != 0:
                 logger.info(f'Process speed is : {time_metrics["frameN"]/time_metrics["delta"]:.4f} fps')
+            if stream_publisher is not None:
+                logger.trace(f'stream publisher has {len(stream_publisher.pipe)} elements in pipe')
     except KeyboardInterrupt:
         worker._endingWork()
         logger.debug('Interrupt the work due to KeyboardInterrupt.')
@@ -337,16 +396,15 @@ def main():
         logger.error(e)
     finally:
         logger.info('Work finished.')
+        if stream_publisher is not None:
+            stream_publisher.shutdown()
+        if vwriter_process is not None:
+            vwriter_process.stdin.close()
+            vwriter_process.communicate()
         if args.stream_output is not None:
             stream_logFile.close()
         if args.video_output is not None:
             vwriter_logFile.close()
-        if ffmpeg_process is not None:
-            ffmpeg_process.stdin.close()
-            ffmpeg_process.wait()
-        if vwriter_process is not None:
-            vwriter_process.stdin.close()
-            vwriter_process.wait()
         if args.write_to_csv:
             if short_csv is not None and not short_csv.closed:
                 short_csv.close()

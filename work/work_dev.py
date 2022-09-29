@@ -213,6 +213,80 @@ class publisher:
                 self.process.stdin.write(bfr)
             time.sleep(self.sleep_duration)
 
+class segment_publisher:
+    def __init__(self):
+        self.opened = True
+        self.pipe = deque()
+        self.process = None
+        self.sleep_duration = 1
+        self.thread_worker = Thread(target=self.run)
+        self.thread_worker.start()
+        self.ffmpeg_args = {
+            'shape':None,
+            'fps':None,
+            'encoder':None,
+            'destination':None,
+            'log':None
+        }
+    
+    def start(self, shape, fps, encoder, destination, log):
+        self.sleep_duration = 1/(fps*1.5)
+        self.ffmpeg_args = {
+            'shape':shape,
+            'fps':fps,
+            'encoder':encoder,
+            'destination':destination,
+            'log':log
+        }
+        self.pipe.append(destination)
+        logger.info(f'stream writer to {destination} is starting.')
+
+    def shutdown(self):
+        self.opened = False
+        self.thread_worker.join()
+        for _ in range(len(self.pipe)):
+            bfr = self.pipe[0]
+            self.pipe.popleft()
+            if bfr is None:
+                self.process.stdin.close()
+                self.process.communicate()
+                logger.info(f'stream writer to {self.ffmpeg_args["destination"]} is end.')
+            elif isinstance(bfr, str):
+                self.ffmpeg_args['destination'] = bfr
+                self.process = make_ffmpeg_process(self.ffmpeg_args['shape'], self.ffmpeg_args['fps'], self.ffmpeg_args['encoder'], bfr, self.ffmpeg_args['log'])
+                logger.info(f'stream writer to {bfr} is starting.')
+            elif isinstance(bfr, bytes):
+                self.process.stdin.write(bfr)
+        if not self.process.stdin.closed:
+            self.process.stdin.close()
+        if self.process.poll() is None:
+            self.process.communicate()
+        logger.debug(f'====================thread shutdown====================')
+        logger.debug(f'kill process of {self.process.args}')
+        logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
+        logger.debug(f'subprocess status? {self.process.poll()}')
+        logger.debug(f'remain frames : {len(self.pipe)}')
+        logger.debug(f'stdin of subprocess is close? {self.process.stdin.closed}')
+        logger.debug(f'=======================================================')
+
+    def run(self):
+        bfr = None
+        while self.opened:
+            if len(self.pipe) > 0:
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                if bfr is None:
+                    self.process.stdin.close()
+                    self.process.communicate()
+                    logger.info(f'stream writer to {self.ffmpeg_args["destination"]} is end.')
+                elif isinstance(bfr, str):
+                    self.ffmpeg_args['destination'] = bfr
+                    self.process = make_ffmpeg_process(self.ffmpeg_args['shape'], self.ffmpeg_args['fps'], self.ffmpeg_args['encoder'], bfr, self.ffmpeg_args['log'])
+                    logger.info(f'stream writer to {bfr} is starting.')
+                elif isinstance(bfr, bytes):
+                    self.process.stdin.write(bfr)
+            time.sleep(self.sleep_duration)
+
 @logger.catch
 def main():
     args = make_parser().parse_args()
@@ -258,7 +332,7 @@ def main():
 
     if args.video_output is not None:
         vwriter_logFile = open(args.vout_log, 'w')
-    vwriter_process = None
+        video_writer = segment_publisher()
     
     if args.stream_output is not None:
         stream_logFile = open(args.stream_log, 'w')
@@ -280,9 +354,8 @@ def main():
                     raise Exception(f'Could not open file "{args.video_input}" for legacy mode')
                 if 'LOSS_CAPTURE' in events:
                     logger.info('[LOSS_CAPTURE] signal was received.')
-                    if vwriter_process is not None:
-                        vwriter_process.stdin.close()
-                        vwriter_process.wait()
+                    if video_writer is not None:
+                        video_writer.pipe.append(None)
                     if args.write_to_csv is not None:
                         if len(short_data_record) < 1 or len(raw_data_record) < 1:
                             logger.warning('Worker may not support result recording.')
@@ -339,7 +412,7 @@ def main():
                     datetime_tag = datetime.datetime.now().strftime(r'%Y%m%d_%H%M')
                     if args.video_output is not None:
                         vwriter_filename = f'{args.video_output}{datetime_tag}.mkv' if not args.legacy else args.video_output
-                        vwriter_process = make_ffmpeg_process(stored_size, args.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
+                        video_writer.start(stored_size, args.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
                         logger.info(f'Decide the name of save video is : {vwriter_filename}')
                     if args.write_to_csv is not None:
                         short_table_name = f'{args.write_to_csv}{datetime_tag}.csv' if not args.legacy else args.write_to_csv
@@ -375,8 +448,8 @@ def main():
                 frameBytes = frame.data.tobytes()
                 if stream_publisher is not None:
                     stream_publisher.pipe.append(frameBytes)
-                if vwriter_process is not None:
-                    vwriter_process.stdin.write(frameBytes)
+                if video_writer is not None:
+                    video_writer.pipe.append(frameBytes)
             # analyst time consumption
             if time_point is not None:
                 delta_time = time.time() - time_point
@@ -389,6 +462,8 @@ def main():
                 logger.info(f'Process speed is : {time_metrics["frameN"]/time_metrics["delta"]:.4f} fps')
             if stream_publisher is not None:
                 logger.trace(f'stream publisher has {len(stream_publisher.pipe)} elements in pipe')
+            if video_writer is not None:
+                logger.trace(f'video writer has {len(video_writer.pipe)} elements in pipe')
     except KeyboardInterrupt:
         worker._endingWork()
         logger.debug('Interrupt the work due to KeyboardInterrupt.')
@@ -398,9 +473,8 @@ def main():
         logger.info('Work finished.')
         if stream_publisher is not None:
             stream_publisher.shutdown()
-        if vwriter_process is not None:
-            vwriter_process.stdin.close()
-            vwriter_process.communicate()
+        if video_writer is not None:
+            video_writer.shutdown()
         if args.stream_output is not None:
             stream_logFile.close()
         if args.video_output is not None:

@@ -1,17 +1,21 @@
 import numpy as np
 import cv2
 from typing import Any, List, Tuple
+from collections import deque
+import itertools
+import time
 
 class FrameCenter:
     def __init__(self, video_path:str, max_batch:int=1, start_second:int=None, frame_step:int=1, fps:int=None)->None:
         self.read_gap = frame_step - 1
         self.max_batch = max_batch
-        self.frame_bfr = []
+        self.frame_bfr = deque()
+        self.current_pipe = None
         self.base_frame_ID = 1
         self.video_path=video_path
         self.setting_fps = fps
         self.start_second = start_second
-        self.init_capture()
+        self.on = False
     
     def init_capture(self)->None:
         self.cap = cv2.VideoCapture(self.video_path, cv2.CAP_FFMPEG)
@@ -25,40 +29,59 @@ class FrameCenter:
         if self.start_second is not None:
             for _ in range(int(self.start_second*self.Metadata['fps'])):
                 self.cap.read()
-        self.base_frame_ID = 1
 
-    def Allocate(self)->Tuple[List[np.ndarray], int, List[int]]:
-        bfr = []
-        if len(self.frame_bfr) >= self.max_batch:
-            bfr = self.frame_bfr[:self.max_batch]
-            self.frame_bfr = self.frame_bfr[self.max_batch:]
-        else:
-            bfr = self.frame_bfr[:]
-            self.frame_bfr = []
-        FIDs = [self.base_frame_ID + delta for delta in range(len(bfr))]
-        self.base_frame_ID += len(bfr)
-        return bfr, len(bfr), FIDs
+    def Allocate(self)->Tuple[deque[np.ndarray], int, deque[int], bool]:
+        if len(self.frame_bfr) == 0:
+            return deque(), 0, deque(), True
+        if len(self.frame_bfr[0]) > self.max_batch:
+            bfr = deque(itertools.islice(self.frame_bfr[0], self.max_batch))
+            self.frame_bfr[0] = deque(itertools.islice(self.frame_bfr[0], self.max_batch, None))
+            fids = deque(range(self.base_frame_ID, self.base_frame_ID+self.max_batch))
+            self.base_frame_ID = self.base_frame_ID + self.max_batch
+            return bfr, self.max_batch, fids, False
+        bfr = self.frame_bfr[0].copy()
+        self.frame_bfr[0].clear()
+        fids = deque(range(self.base_frame_ID, self.base_frame_ID+len(bfr)))
+        self.base_frame_ID = self.base_frame_ID + len(bfr)
+        if len(self.frame_bfr) > 1 or self.current_pipe is None:
+            self.frame_bfr.popleft()
+            self.base_frame_ID = 1
+            return bfr, len(bfr), fids, True
+        return bfr, len(bfr), fids, False
 
     def Load(self)->None:
-        for i in range(self.max_batch):
+        for _ in range(self.max_batch):
+            if self.current_pipe is None:
+                self.init_capture()
             ret, frame = self.cap.read()
-            if ret:
-                self.frame_bfr.append(frame)
+            if not ret:
+                self.current_pipe = None
+                break
+            if self.current_pipe is None:
+                self.current_pipe = deque()
+                self.frame_bfr.append(self.current_pipe)
+            self.current_pipe.append(frame)
             for _ in range(self.read_gap):
                 ret, _ = self.cap.read() if ret else (False, None)
             if not ret:
-                return
-        return
+                self.current_pipe = None
+                break
 
     def Async_Load(self)->None:
-        while True:
+        self.init_capture()
+        while self.on:
             ret, frame = self.cap.read()
-            if ret:
-                self.frame_bfr.append(frame)
-            for _ in range(self.read_gap):
-                ret, _ = self.cap.read() if ret else (False, None)
             if not ret:
-                return
+                self.current_pipe = None
+                time.sleep(1)
+                self.init_capture()
+            else:
+                if self.current_pipe is None:
+                    self.current_pipe = deque()
+                    self.frame_bfr.append(self.current_pipe)
+                self.current_pipe.append(frame)
+                for _ in range(self.read_gap):
+                    ret, _ = self.cap.read() if ret else (False, None)
     
     def Get(self, meta_type:int)->Any:
         return self.cap.get(meta_type)

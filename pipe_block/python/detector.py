@@ -4,6 +4,7 @@ import os.path as osp
 import torch
 import numpy as np
 import cv2
+from collections import deque
 
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
 from yolox.data.data_augment import ValTransform
@@ -45,7 +46,7 @@ class Detector:
         self._COLORS = _COLORS
 
     def detect(self, imgs):
-        if not isinstance(imgs, list):
+        if not isinstance(imgs, deque):
             imgs = [imgs]
         imgs_info = [{
             "height":img.shape[0],

@@ -118,16 +118,6 @@ class Worker(BaseWorker):
         )
 
     def _examWork(self):
-        if not self.FCenter.cap.isOpened():
-            self.FCenter.init_capture()
-            self.on = False
-            return False
-        if not self.on:
-            self.on = True
-            self._signal('GET_CAPTURE')
-            self.fps = self.FCenter.Metadata['fps']
-            self.lazy_init()
-            return False
         return True
 
     def _workFlow(self, dataToWork):
@@ -326,13 +316,23 @@ class Worker(BaseWorker):
         return packet['fids'], packet['frames'], packet['raw_data'], packet['short_data']
 
     def _conditionWork(self):
-        self.FCenter.Exit()
-        self._signal('LOSS_CAPTURE')
+        pass
 
     def _preparatory(self):
         self.FCenter.Load()
-        dataToWork = self.FCenter.Allocate()
-        return dataToWork, dataToWork[1] > 0
+        data = self.FCenter.Allocate()
+        eof = data[-1]
+        length = data[1]
+        dataToWork = data[:-1]
+        if length > 0 and not self.on:
+            self.on = True
+            self._signal('GET_CAPTURE')
+            self.fps = self.FCenter.Metadata['fps']
+            self.lazy_init()
+        if eof and self.on:
+            self.on = False
+            self._signal('LOSS_CAPTURE')
+        return dataToWork, length > 0
 
     def _endingWork(self):
         self.FCenter.Exit()

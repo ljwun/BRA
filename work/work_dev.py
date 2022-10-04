@@ -347,123 +347,123 @@ def main():
         for result in worker:
             if should_stop and args.legacy:
                 break
-            if result is None:
-                events = worker.receive_signal()
-                logger.trace(f'receive events is : {events}')
-                if args.legacy and not worker.on and len(events)==0:
-                    raise Exception(f'Could not open file "{args.video_input}" for legacy mode')
-                if 'LOSS_CAPTURE' in events:
-                    logger.info('[LOSS_CAPTURE] signal was received.')
-                    if video_writer is not None:
-                        video_writer.pipe.append(None)
-                    if args.write_to_csv is not None:
-                        if len(short_data_record) < 1 or len(raw_data_record) < 1:
-                            logger.warning('Worker may not support result recording.')
-                        else:
-                            writer = csv.DictWriter(short_csv, fieldnames=list(short_data_record[0].keys()))
-                            writer.writeheader()
-                            writer.writerows(short_data_record)
-                            short_csv.close()
-                            short_csv = None
-                            writer = csv.DictWriter(full_csv, fieldnames=list(raw_data_record[0].keys()))
-                            writer.writeheader()
-                            writer.writerows(raw_data_record)
-                            full_csv.close()
-                            full_csv = None
-                    if args.legacy:
-                        break
-                elif 'GET_CAPTURE' in events:
-                    time_point = None
-                    should_stop = False
-                    logger.info('[GET_CAPTURE] signal was received.')
-                    frame_limit = None if args.duration is None else round(args.duration * worker.fps)
+            events = worker.receive_signal()
+            logger.trace(f'receive events is : {events}')
+            if args.legacy and not worker.on and len(events)==0:
+                raise Exception(f'Could not open file "{args.video_input}" for legacy mode')
+            if 'GET_CAPTURE' in events:
+                time_point = None
+                should_stop = False
+                logger.info('[GET_CAPTURE] signal was received.')
+                frame_limit = None
+                if args.duration is not None:
+                    frame_limit = round(args.duration * worker.fps)
                     logger.info(f'Work will stop after {frame_limit} processed frame.')
-                    source_size = (
-                        int(worker.FCenter.Metadata['width']),
-                        int(worker.FCenter.Metadata['height'])
-                    )
-                    logger.debug(f'Capture dimension is : {source_size}')
-                    if stored_size is None:
-                        if args.output_scale is None:
-                            stored_size = source_size
+                source_size = (
+                    int(worker.FCenter.Metadata['width']),
+                    int(worker.FCenter.Metadata['height'])
+                )
+                logger.debug(f'Capture dimension is : {source_size}')
+                if stored_size is None:
+                    if args.output_scale is None:
+                        stored_size = source_size
+                    else:
+                        if args.output_scale[0] == -1:
+                            ratio = args.output_scale[1] / source_size[1]
+                            stored_size = (
+                                int(source_size[0] * ratio),
+                                args.output_scale[1]
+                            )
+                        elif args.output_scale[1] == -1:
+                            ratio = args.output_scale[0] / source_size[0]
+                            stored_size = (
+                                args.output_scale[0],
+                                int(source_size[1] * ratio)
+                            )
                         else:
-                            if args.output_scale[0] == -1:
-                                ratio = args.output_scale[1] / source_size[1]
-                                stored_size = (
-                                    int(source_size[0] * ratio),
-                                    args.output_scale[1]
-                                )
-                            elif args.output_scale[1] == -1:
-                                ratio = args.output_scale[0] / source_size[0]
-                                stored_size = (
-                                    args.output_scale[0],
-                                    int(source_size[1] * ratio)
-                                )
-                            else:
-                                stored_size = args.output_size
-                        null_frame = np.zeros((stored_size[1], stored_size[0], 3), np.uint8)
-                        _text_size = cv2.getTextSize('WAIT SIGNAL...', cv2.FONT_HERSHEY_SIMPLEX, 6, 7)[0]
-                        _pos = ((stored_size[0] - _text_size[0]) // 2 , (stored_size[1] + _text_size[1]) // 2)
-                        cv2.putText(null_frame, 'WAIT SIGNAL...', _pos, cv2.FONT_HERSHEY_SIMPLEX, 6, (255, 255, 255), 7)
-                        null_frame = null_frame.tobytes()
-                        logger.debug(f'Decide result dimension is {stored_size}.')
-                    shouldResize = source_size != stored_size
+                            stored_size = args.output_size
+                    null_frame = np.zeros((stored_size[1], stored_size[0], 3), np.uint8)
+                    _text_size = cv2.getTextSize('WAIT SIGNAL...', cv2.FONT_HERSHEY_SIMPLEX, 6, 7)[0]
+                    _pos = ((stored_size[0] - _text_size[0]) // 2 , (stored_size[1] + _text_size[1]) // 2)
+                    cv2.putText(null_frame, 'WAIT SIGNAL...', _pos, cv2.FONT_HERSHEY_SIMPLEX, 6, (255, 255, 255), 7)
+                    null_frame = null_frame.tobytes()
+                    logger.debug(f'Decide result dimension is {stored_size}.')
+                shouldResize = source_size != stored_size
 
-                    datetime_tag = datetime.datetime.now().strftime(r'%Y%m%d_%H%M')
-                    if args.video_output is not None:
-                        vwriter_filename = f'{args.video_output}{datetime_tag}.mkv' if not args.legacy else args.video_output
-                        video_writer.start(stored_size, args.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
-                        logger.info(f'Decide the name of save video is : {vwriter_filename}')
-                    if args.write_to_csv is not None:
-                        short_table_name = f'{args.write_to_csv}{datetime_tag}.csv' if not args.legacy else args.write_to_csv
-                        short_csv = open(short_table_name, 'w', newline='')
-                        logger.info(f'Decide the name of simple csv is : {short_table_name}')
-                        full_table_name = osp.normpath(osp.join(osp.dirname(short_table_name), f'[raw]{osp.basename(short_table_name)}'))
-                        full_csv = open(full_table_name, 'w', newline='')
-                        logger.info(f'Decide the name of complete csv is : {full_table_name}')
-                    if args.stream_output is not None and not stream_publisher.opened:
-                        stream_publisher.start(stored_size, args.fps, args.output_encoder, args.stream_output, stream_logFile, null_frame)
+                datetime_tag = datetime.datetime.now().strftime(r'%Y%m%d_%H%M')
+                if args.video_output is not None:
+                    vwriter_filename = f'{args.video_output}{datetime_tag}.mkv' if not args.legacy else args.video_output
+                    video_writer.start(stored_size, args.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
+                    logger.info(f'Decide the name of save video is : {vwriter_filename}')
+                if args.write_to_csv is not None:
+                    short_table_name = f'{args.write_to_csv}{datetime_tag}.csv' if not args.legacy else args.write_to_csv
+                    short_csv = open(short_table_name, 'w', newline='')
+                    logger.info(f'Decide the name of simple csv is : {short_table_name}')
+                    full_table_name = osp.normpath(osp.join(osp.dirname(short_table_name), f'[raw]{osp.basename(short_table_name)}'))
+                    full_csv = open(full_table_name, 'w', newline='')
+                    logger.info(f'Decide the name of complete csv is : {full_table_name}')
+                if args.stream_output is not None and not stream_publisher.opened:
+                    stream_publisher.start(stored_size, args.fps, args.output_encoder, args.stream_output, stream_logFile, null_frame)
+            if result is not None:
+                fids, frames, raw_data, short_data = result
+                raw_data_record += raw_data
+                short_data_record += short_data
+                if len(fids) == 1:
+                    logger.trace(f'Process progress is : {fids[0] / worker.fps:.3f}')
                 else:
-                    for _ in range(int(args.fps)):
-                        if stream_publisher is not None and stream_publisher.opened and null_frame is not None:
-                            stream_publisher.pipe.append(null_frame)
-                    time.sleep(1)
-                    logger.trace(f'sleep 1 second')
-                continue
-            fids, frames, raw_data, short_data = result
-            raw_data_record += raw_data
-            short_data_record += short_data
-            if len(fids) == 1:
-                logger.trace(f'Process progress is : {fids[0] / worker.fps:.3f}')
-            else:
-                logger.trace(f'Process progress is : {fids[0] / worker.fps:.3f} to {fids[-1] / worker.fps:.3f}')
-            for fid, frame in zip(fids, frames):
-                if frame_limit is not None and fid > frame_limit:
-                    should_stop = True
-                    logger.info(f'Reaching early stop => {frame_limit} frame.')
-                    break
-
-                if shouldResize:
-                    frame = cv2.resize(frame, stored_size)
-                frameBytes = frame.data.tobytes()
+                    logger.trace(f'Process progress is : {fids[0] / worker.fps:.3f} to {fids[-1] / worker.fps:.3f}')
+                for fid, frame in zip(fids, frames):
+                    if frame_limit is not None and fid > frame_limit:
+                        should_stop = True
+                        logger.info(f'Reaching early stop => {frame_limit} frame.')
+                        break
+                    if shouldResize:
+                        frame = cv2.resize(frame, stored_size)
+                    frameBytes = frame.data.tobytes()
+                    if stream_publisher is not None:
+                        stream_publisher.pipe.append(frameBytes)
+                    if video_writer is not None:
+                        video_writer.pipe.append(frameBytes)
+                # analyst time consumption
+                if time_point is not None:
+                    delta_time = time.time() - time_point
+                    time_point += delta_time
+                    time_metrics['delta'] += delta_time
+                    time_metrics['frameN'] += len(fids)
+                else:
+                    time_point = time.time()
+                if time_metrics['frameN'] != 0:
+                    logger.info(f'Process speed is : {time_metrics["frameN"]/time_metrics["delta"]:.4f} fps')
                 if stream_publisher is not None:
-                    stream_publisher.pipe.append(frameBytes)
+                    logger.trace(f'stream publisher has {len(stream_publisher.pipe)} elements in pipe')
                 if video_writer is not None:
-                    video_writer.pipe.append(frameBytes)
-            # analyst time consumption
-            if time_point is not None:
-                delta_time = time.time() - time_point
-                time_point += delta_time
-                time_metrics['delta'] += delta_time
-                time_metrics['frameN'] += len(fids)
-            else:
-                time_point = time.time()
-            if time_metrics['frameN'] != 0:
-                logger.info(f'Process speed is : {time_metrics["frameN"]/time_metrics["delta"]:.4f} fps')
-            if stream_publisher is not None:
-                logger.trace(f'stream publisher has {len(stream_publisher.pipe)} elements in pipe')
-            if video_writer is not None:
-                logger.trace(f'video writer has {len(video_writer.pipe)} elements in pipe')
+                    logger.trace(f'video writer has {len(video_writer.pipe)} elements in pipe')
+            elif len(events) == 0:
+                for _ in range(int(args.fps)):
+                    if stream_publisher is not None and stream_publisher.opened and null_frame is not None:
+                        stream_publisher.pipe.append(null_frame)
+                time.sleep(1)
+                logger.trace(f'sleep 1 second')
+            if 'LOSS_CAPTURE' in events:
+                logger.info('[LOSS_CAPTURE] signal was received.')
+                if video_writer is not None:
+                    video_writer.pipe.append(None)
+                if args.write_to_csv is not None:
+                    if len(short_data_record) < 1 or len(raw_data_record) < 1:
+                        logger.warning('Worker may not support result recording.')
+                    else:
+                        writer = csv.DictWriter(short_csv, fieldnames=list(short_data_record[0].keys()))
+                        writer.writeheader()
+                        writer.writerows(short_data_record)
+                        short_csv.close()
+                        short_csv = None
+                        writer = csv.DictWriter(full_csv, fieldnames=list(raw_data_record[0].keys()))
+                        writer.writeheader()
+                        writer.writerows(raw_data_record)
+                        full_csv.close()
+                        full_csv = None
+                if args.legacy:
+                    break
     except KeyboardInterrupt:
         worker._endingWork()
         logger.debug('Interrupt the work due to KeyboardInterrupt.')

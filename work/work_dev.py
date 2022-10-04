@@ -188,20 +188,22 @@ class publisher:
         logger.info(f'stream publisher to {destination} is starting.')
 
     def shutdown(self):
-        self.opened = False
-        self.thread_worker.join()
-        for _ in range(len(self.pipe)):
-            bfr = self.pipe[0]
-            self.pipe.popleft()
-            self.process.stdin.write(bfr)
-        self.process.stdin.close()
-        self.process.communicate()
         logger.debug(f'====================thread shutdown====================')
-        logger.debug(f'kill process of {self.process.args}')
+        self.opened = False
+        if self.thread_worker.is_alive():
+            self.thread_worker.join()
         logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
-        logger.debug(f'subprocess status? {self.process.poll()}')
+        if self.process is not None:
+            for _ in range(len(self.pipe)):
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                self.process.stdin.write(bfr)
+            self.process.stdin.close()
+            self.process.communicate()
+            logger.debug(f'kill process of {self.process.args}')
+            logger.debug(f'subprocess status? {self.process.poll()}')
+            logger.debug(f'stdin of subprocess is close? {self.process.stdin.closed}')
         logger.debug(f'remain frames : {len(self.pipe)}')
-        logger.debug(f'stdin of subprocess is close? {self.process.stdin.closed}')
         logger.debug(f'=======================================================')
 
     def run(self):
@@ -242,31 +244,33 @@ class segment_publisher:
         logger.info(f'stream writer to {destination} is starting.')
 
     def shutdown(self):
-        self.opened = False
-        self.thread_worker.join()
-        for _ in range(len(self.pipe)):
-            bfr = self.pipe[0]
-            self.pipe.popleft()
-            if bfr is None:
-                self.process.stdin.close()
-                self.process.communicate()
-                logger.info(f'stream writer to {self.ffmpeg_args["destination"]} is end.')
-            elif isinstance(bfr, str):
-                self.ffmpeg_args['destination'] = bfr
-                self.process = make_ffmpeg_process(self.ffmpeg_args['shape'], self.ffmpeg_args['fps'], self.ffmpeg_args['encoder'], bfr, self.ffmpeg_args['log'])
-                logger.info(f'stream writer to {bfr} is starting.')
-            elif isinstance(bfr, bytes):
-                self.process.stdin.write(bfr)
-        if not self.process.stdin.closed:
-            self.process.stdin.close()
-        if self.process.poll() is None:
-            self.process.communicate()
         logger.debug(f'====================thread shutdown====================')
-        logger.debug(f'kill process of {self.process.args}')
+        self.opened = False
+        if self.thread_worker.is_alive():
+            self.thread_worker.join()
         logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
-        logger.debug(f'subprocess status? {self.process.poll()}')
+        if self.process is not None:
+            for _ in range(len(self.pipe)):
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                if bfr is None:
+                    self.process.stdin.close()
+                    self.process.communicate()
+                    logger.info(f'stream writer to {self.ffmpeg_args["destination"]} is end.')
+                elif isinstance(bfr, str):
+                    self.ffmpeg_args['destination'] = bfr
+                    self.process = make_ffmpeg_process(self.ffmpeg_args['shape'], self.ffmpeg_args['fps'], self.ffmpeg_args['encoder'], bfr, self.ffmpeg_args['log'])
+                    logger.info(f'stream writer to {bfr} is starting.')
+                elif isinstance(bfr, bytes):
+                    self.process.stdin.write(bfr)
+            if not self.process.stdin.closed:
+                self.process.stdin.close()
+            if self.process.poll() is None:
+                self.process.communicate()
+            logger.debug(f'kill process of {self.process.args}')
+            logger.debug(f'subprocess status? {self.process.poll()}')
+            logger.debug(f'stdin of subprocess is close? {self.process.stdin.closed}')
         logger.debug(f'remain frames : {len(self.pipe)}')
-        logger.debug(f'stdin of subprocess is close? {self.process.stdin.closed}')
         logger.debug(f'=======================================================')
 
     def run(self):

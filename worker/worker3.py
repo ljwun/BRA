@@ -49,7 +49,7 @@ class Worker(BaseWorker):
         elif enable_track is not None:
             self.config['track_opt']['enable'] = enable_track
 
-        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_second=start_second, fps=actual_framerate)
+        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_second=start_second, fps=actual_framerate, async_mode=True)
         self.on = False
         self.fps = None
         self.reid = reid
@@ -319,10 +319,12 @@ class Worker(BaseWorker):
         pass
 
     def _preparatory(self):
-        self.FCenter.Load()
+        # self.FCenter.Load()
         data = self.FCenter.Allocate()
         eof = data[-1]
         length = data[1]
+        logger.debug(f'Allocate {length} elements from FCenter.')
+        logger.debug(f'{len(self.FCenter.frame_bfr[0]) if len(self.FCenter.frame_bfr) > 0 else 0} frames left in the buffer of this capture.')
         dataToWork = data[:-1]
         if length > 0 and not self.on:
             self.on = True

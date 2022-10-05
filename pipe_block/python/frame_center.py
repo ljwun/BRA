@@ -4,9 +4,11 @@ from typing import Any, List, Tuple
 from collections import deque
 import itertools
 import time
+from threading import Thread
+from loguru import logger
 
 class FrameCenter:
-    def __init__(self, video_path:str, max_batch:int=1, start_second:int=None, frame_step:int=1, fps:int=None)->None:
+    def __init__(self, video_path:str, max_batch:int=1, start_second:int=None, frame_step:int=1, fps:int=None, async_mode:bool=False)->None:
         self.read_gap = frame_step - 1
         self.max_batch = max_batch
         self.frame_bfr = deque()
@@ -16,6 +18,12 @@ class FrameCenter:
         self.setting_fps = fps
         self.start_second = start_second
         self.on = False
+        self.async_mode = async_mode
+        self.thread_worker = None
+        if self.async_mode:
+            self.on = True
+            self.thread_worker = Thread(target=self.Async_Load)
+            self.thread_worker.start()
     
     def init_capture(self)->None:
         self.cap = cv2.VideoCapture(self.video_path, cv2.CAP_FFMPEG)
@@ -35,7 +43,8 @@ class FrameCenter:
             return deque(), 0, deque(), True
         if len(self.frame_bfr[0]) > self.max_batch:
             bfr = deque(itertools.islice(self.frame_bfr[0], self.max_batch))
-            self.frame_bfr[0] = deque(itertools.islice(self.frame_bfr[0], self.max_batch, None))
+            for _ in range(self.max_batch):
+                self.frame_bfr[0].popleft()
             fids = deque(range(self.base_frame_ID, self.base_frame_ID+self.max_batch))
             self.base_frame_ID = self.base_frame_ID + self.max_batch
             return bfr, self.max_batch, fids, False
@@ -50,6 +59,9 @@ class FrameCenter:
         return bfr, len(bfr), fids, False
 
     def Load(self)->None:
+        if self.async_mode:
+            logger.warning('Since async_mode is enabled. Synchronous "Load" method won\'t work.')
+            return
         for _ in range(self.max_batch):
             if self.current_pipe is None:
                 self.init_capture()
@@ -87,4 +99,11 @@ class FrameCenter:
         return self.cap.get(meta_type)
 
     def Exit(self)->None:
+        self.on = False
+        if self.async_mode:
+            logger.debug(f'====================thread shutdown====================')
+            if self.thread_worker is not None and self.thread_worker.is_alive():
+                self.thread_worker.join()
+            logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
+            logger.debug(f'=======================================================')
         self.cap.release()

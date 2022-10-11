@@ -17,7 +17,7 @@ import sys
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
 sys.path.append(osp.join(__proot__,  "third_party", "YOLOX"))
-from mask.exp import get_exp, FMExp as Exp
+from yolox.exp import get_exp, Exp
 from yolox.core import launch
 from yolox.utils import configure_module, configure_nccl, configure_omp, get_num_devices
 

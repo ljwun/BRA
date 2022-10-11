@@ -127,6 +127,11 @@ def make_parser():
         type=str, default='INFO',
         help='level for logger of work'
     )
+    parser.add_argument(
+        '--io_backend',
+        type=str, default='FFMPEG',
+        help='backend for processing io->FFMPEG or GSTREAMER'
+    )
     return parser
 
 def make_ffmpeg_process(shape, fps, encoder, destination, log):
@@ -170,7 +175,7 @@ def make_ffmpeg_process(shape, fps, encoder, destination, log):
     )
 
 # define the worker processing result stream pushing for thread
-class publisher:
+class publisher_ffmpeg:
     def __init__(self):
         self.opened = False
         self.pipe = deque()
@@ -182,7 +187,7 @@ class publisher:
     def start(self, shape, fps, encoder, destination, log, null_frame):
         self.sleep_duration = 1/(fps*1.5)
         self.process = make_ffmpeg_process(shape, fps, encoder, destination, log)
-        self.null_frame = null_frame
+        self.null_frame = null_frame.tobytes()
         self.opened = True
         self.thread_worker.start()
         logger.info(f'stream publisher to {destination} is starting.')
@@ -195,7 +200,7 @@ class publisher:
         logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
         if self.process is not None:
             for _ in range(len(self.pipe)):
-                bfr = self.pipe[0]
+                bfr = self.pipe[0].tobytes()
                 self.pipe.popleft()
                 self.process.stdin.write(bfr)
             self.process.stdin.close()
@@ -210,12 +215,58 @@ class publisher:
         bfr = None
         while self.opened:
             if len(self.pipe) > 0:
-                bfr = self.pipe[0]
+                bfr = self.pipe[0].tobytes()
                 self.pipe.popleft()
                 self.process.stdin.write(bfr)
             time.sleep(self.sleep_duration)
 
-class segment_publisher:
+class publisher_gst:
+    def __init__(self):
+        logger.warning(f"Current version of BRA haven't supported gstreamer stream publisher. This function will work on monitor mode.")
+        self.opened = False
+        self.pipe = deque()
+        self.writer = None
+        self.gst_pattern = r"appsrc ! video/x-raw, format=BGR ! queue ! videoconvert ! video/x-raw,format=I420 ! nvvidconv ! video/x-raw(memory:NVMM) ! nvoverlaysink sync=false"
+        self.null_frame = None
+        self.thread_worker = Thread(target=self.run)
+        self.sleep_duration = None
+
+    def start(self, shape, fps, encoder, destination, log, null_frame):
+        self.sleep_duration = 1/(fps*1.5)
+        self.writer = cv2.VideoWriter(self.gst_pattern, cv2.CAP_GSTREAMER, 0, float(fps), shape)
+        self.null_frame = null_frame
+        self.opened = True
+        self.thread_worker.start()
+        logger.info(f'publisher to host monitor is starting.')
+
+    def shutdown(self):
+        logger.debug(f'====================thread shutdown====================')
+        self.opened = False
+        if self.thread_worker.is_alive():
+            self.thread_worker.join()
+        logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
+        if self.writer is not None:
+            for _ in range(len(self.pipe)):
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                self.writer.write(bfr)
+                cv2.waitKey(1)
+            self.writer.release()
+            logger.info(f'publisher to monitor is end.')
+        logger.debug(f'remain frames : {len(self.pipe)}')
+        logger.debug(f'=======================================================')
+
+    def run(self):
+        bfr = None
+        while self.opened:
+            if len(self.pipe) > 0:
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                self.writer.write(bfr)
+                cv2.waitKey(1)
+            time.sleep(self.sleep_duration)
+
+class segment_publisher_ffmpeg:
     def __init__(self):
         self.opened = True
         self.pipe = deque()
@@ -261,8 +312,8 @@ class segment_publisher:
                     self.ffmpeg_args['destination'] = bfr
                     self.process = make_ffmpeg_process(self.ffmpeg_args['shape'], self.ffmpeg_args['fps'], self.ffmpeg_args['encoder'], bfr, self.ffmpeg_args['log'])
                     logger.info(f'stream writer to {bfr} is starting.')
-                elif isinstance(bfr, bytes):
-                    self.process.stdin.write(bfr)
+                elif isinstance(bfr, np.ndarray):
+                    self.process.stdin.write(bfr.tobytes())
             if not self.process.stdin.closed:
                 self.process.stdin.close()
             if self.process.poll() is None:
@@ -287,8 +338,84 @@ class segment_publisher:
                     self.ffmpeg_args['destination'] = bfr
                     self.process = make_ffmpeg_process(self.ffmpeg_args['shape'], self.ffmpeg_args['fps'], self.ffmpeg_args['encoder'], bfr, self.ffmpeg_args['log'])
                     logger.info(f'stream writer to {bfr} is starting.')
-                elif isinstance(bfr, bytes):
-                    self.process.stdin.write(bfr)
+                elif isinstance(bfr, np.ndarray):
+                    self.process.stdin.write(bfr.tobytes())
+            time.sleep(self.sleep_duration)
+
+class segment_publisher_gst:
+    def __init__(self):
+        self.opened = True
+        self.pipe = deque()
+        self.writer = None
+        self.gst_pattern = r"appsrc ! video/x-raw, format=BGR ! queue ! videoconvert ! video/x-raw,format=BGRx ! nvvidconv ! nvv4l2h264enc ! h264parse ! matroskamux ! filesink location=%s"
+        self.sleep_duration = 1
+        self.thread_worker = Thread(target=self.run)
+        self.thread_worker.start()
+        self.args = {
+            'shape':None,
+            'fps':None,
+            'encoder':None,
+            'destination':None,
+            'log':None
+        }
+    
+    def start(self, shape, fps, encoder, destination, log):
+        self.sleep_duration = 1/(fps*1.5)
+        self.args = {
+            'shape':shape,
+            'fps':float(fps),
+            'encoder':encoder,
+            'destination':destination,
+            'log':log
+        }
+        self.pipe.append(destination)
+        logger.info(f'stream writer to {destination} is starting.')
+
+    def shutdown(self):
+        logger.debug(f'====================thread shutdown====================')
+        self.opened = False
+        if self.thread_worker.is_alive():
+            self.thread_worker.join()
+        logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
+        if self.writer is not None:
+            for _ in range(len(self.pipe)):
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                if bfr is None:
+                    self.writer.release()
+                    logger.info(f'stream writer to {self.args["destination"]} is end.')
+                elif isinstance(bfr, str):
+                    self.args['destination'] = bfr
+                    self.writer = cv2.VideoWriter(self.gst_pattern % (bfr), cv2.CAP_GSTREAMER, 0, self.args['fps'], self.args['shape'])
+                    if not self.writer.isOpened():
+                        logger.error(f'writer to {bfr} is not reachable.')
+                    logger.info(f'writer to {bfr} is starting.')
+                elif isinstance(bfr, np.ndarray):
+                    self.writer.write(bfr)
+                    cv2.waitKey(1)
+            if self.writer is not None and self.writer.isOpened():
+                self.writer.release()
+        logger.debug(f'remain frames : {len(self.pipe)}')
+        logger.debug(f'=======================================================')
+ 
+    def run(self):
+        bfr = None
+        while self.opened:
+            if len(self.pipe) > 0:
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                if bfr is None:
+                    self.writer.release()
+                    logger.info(f'stream writer to {self.args["destination"]} is end.')
+                elif isinstance(bfr, str):
+                    self.args['destination'] = bfr
+                    self.writer = cv2.VideoWriter(self.gst_pattern % (bfr), cv2.CAP_GSTREAMER, 0, self.args['fps'], self.args['shape'])
+                    if not self.writer.isOpened():
+                        logger.exception(f'writer to {bfr} is not reachable.')
+                    logger.info(f'writer to {bfr} is starting.')
+                elif isinstance(bfr, np.ndarray):
+                    self.writer.write(bfr)
+                    cv2.waitKey(1)
             time.sleep(self.sleep_duration)
 
 @logger.catch
@@ -312,6 +439,9 @@ def main():
             raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
     if args.legacy:
         logger.warning('Legacy is enable!')
+    if args.io_backend != "FFMPEG" and args.io_backend != "GSTREAMER":
+        logger.warning(f"io backend type:{args.io_backend} is not support. System will use default setting:FFMPEG.")
+        args.io_backend = "FFMPEG"
 
     Worker = importlib.import_module(args.worker_file).Worker
     worker = Worker(
@@ -321,7 +451,8 @@ def main():
         actual_framerate = args.fps,
         reid=args.reid,
         start_second = args.start_second,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        io_backend = args.io_backend
     )
 
 
@@ -334,13 +465,23 @@ def main():
     delta_time = None
     time_metrics = {'delta':0.0, 'frameN':0}
 
+    vwriter_logFile = None
+    video_writer = None
     if args.video_output is not None:
         vwriter_logFile = open(args.vout_log, 'w')
-        video_writer = segment_publisher()
+        if args.io_backend == "FFMPEG":
+            video_writer = segment_publisher_ffmpeg()
+        else:
+            video_writer = segment_publisher_gst()
     
+    stream_logFile = None
+    stream_publisher = None
     if args.stream_output is not None:
         stream_logFile = open(args.stream_log, 'w')
-        stream_publisher = publisher()
+        if args.io_backend == "FFMPEG":
+            stream_publisher = publisher_ffmpeg()
+        else:
+            stream_publisher = publisher_gst()
     
     if args.write_to_csv is not None:
         short_csv = None
@@ -423,11 +564,10 @@ def main():
                         break
                     if shouldResize:
                         frame = cv2.resize(frame, stored_size)
-                    frameBytes = frame.data.tobytes()
                     if stream_publisher is not None:
-                        stream_publisher.pipe.append(frameBytes)
+                        stream_publisher.pipe.append(frame)
                     if video_writer is not None:
-                        video_writer.pipe.append(frameBytes)
+                        video_writer.pipe.append(frame)
                 # analyst time consumption
                 if time_point is not None:
                     delta_time = time.time() - time_point
@@ -475,13 +615,13 @@ def main():
         logger.error(e)
     finally:
         logger.info('Work finished.')
-        if stream_publisher is not None:
-            stream_publisher.shutdown()
-        if video_writer is not None:
-            video_writer.shutdown()
         if args.stream_output is not None:
+            if stream_publisher is not None:
+                stream_publisher.shutdown()
             stream_logFile.close()
         if args.video_output is not None:
+            if video_writer is not None:
+                video_writer.shutdown()
             vwriter_logFile.close()
         if args.write_to_csv:
             if short_csv is not None and not short_csv.closed:

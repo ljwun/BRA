@@ -1,6 +1,6 @@
 import numpy as np
 import cv2
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Deque
 from collections import deque
 import itertools
 import time
@@ -8,7 +8,8 @@ from threading import Thread
 from loguru import logger
 
 class FrameCenter:
-    def __init__(self, video_path:str, max_batch:int=1, start_second:int=None, frame_step:int=1, fps:int=None, async_mode:bool=False)->None:
+    def __init__(self, video_path:str, max_batch:int=1, start_second:int=None, frame_step:int=1, fps:int=None, async_mode:bool=False, io_backend:str="FFMPEG")->None:
+        self.backend = cv2.CAP_FFMPEG if io_backend=="FFMPEG" else cv2.CAP_GSTREAMER
         self.read_gap = frame_step - 1
         self.max_batch = max_batch
         self.frame_bfr = deque()
@@ -26,7 +27,7 @@ class FrameCenter:
             self.thread_worker.start()
     
     def init_capture(self)->None:
-        self.cap = cv2.VideoCapture(self.video_path, cv2.CAP_FFMPEG)
+        self.cap = cv2.VideoCapture(self.video_path, self.backend)
         if not self.cap.isOpened():
            return
         self.Metadata = {
@@ -38,7 +39,7 @@ class FrameCenter:
             for _ in range(int(self.start_second*self.Metadata['fps'])):
                 self.cap.read()
 
-    def Allocate(self)->Tuple[deque[np.ndarray], int, deque[int], bool]:
+    def Allocate(self)->Tuple[Deque[np.ndarray], int, Deque[int], bool]:
         if len(self.frame_bfr) == 0:
             return deque(), 0, deque(), True
         if len(self.frame_bfr[0]) > self.max_batch:

@@ -36,7 +36,8 @@ class Worker(BaseWorker):
         reid=False,
         start_second=None,
         batch_size=1,
-        enable_track=None
+        enable_track=None,
+        io_backend="FFMPEG"
     ):
         super().__init__(EOI=['LOSS_CAPTURE', 'GET_CAPTURE'])
         configStream = open(worker_cfg, 'r')
@@ -50,7 +51,7 @@ class Worker(BaseWorker):
             self.config['track_opt']['enable'] = enable_track
 
         self.fc_async_mode = self.config['general']['async_frame_center'] if 'async_frame_center' in self.config['general'] else False
-        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_second=start_second, fps=actual_framerate, async_mode=self.fc_async_mode)
+        self.FCenter = FrameCenter(vin_path, max_batch=batch_size, start_second=start_second, fps=actual_framerate, async_mode=self.fc_async_mode, io_backend=io_backend)
         self.on = False
         self.fps = None
         self.reid = reid

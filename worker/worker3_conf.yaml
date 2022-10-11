@@ -33,3 +33,4 @@ general:
   record_life: 2
   metrics_duration: 600
   metrics_update_time: 60
+  async_frame_center: False

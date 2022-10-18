@@ -63,7 +63,9 @@ class Worker(BaseWorker):
             fuse=self.config['mask']['fuse'],
             fp16=self.config['mask']['fp16'],
             cls_name=["without_mask", "with_mask", "mask_wear_incorrect"],
-            legacy=self.config['mask']['legacy']
+            legacy=self.config['mask']['legacy'],
+            trt_mode=self.config['mask']['trt_mode'],
+            trt_path=self.config['mask']['trt_path']
         )
         self.PDetector = Detector(
             device=self.config['person']['device'],
@@ -72,7 +74,9 @@ class Worker(BaseWorker):
             fuse=self.config['person']['fuse'],
             fp16=self.config['person']['fp16'],
             cls_name=['person'],
-            legacy=self.config['person']['legacy']
+            legacy=self.config['person']['legacy'],
+            trt_mode=self.config['person']['trt_mode'],
+            trt_path=self.config['person']['trt_path']
         )
         self.track_parameter = {
             "track_thresh":self.config['track_opt']['track_thresh'],

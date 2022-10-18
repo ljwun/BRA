@@ -12,7 +12,7 @@ from yolox.utils import fuse_model, postprocess
 from yolox.exp import get_exp
 
 class Detector:
-    def __init__(self, device, exp_path, checkpoint, fuse, fp16, cls_name, legacy=False):
+    def __init__(self, device, exp_path, checkpoint, fuse, fp16, cls_name, legacy=False, trt_mode=False, trt_path=None):
         self.device = re.match("cpu|cuda(:\d*)?", device)
         assert self.device != None, f"Cannot resolve target device string ${device}"
         self.device = self.device.group(0)
@@ -25,17 +25,30 @@ class Detector:
         self.exp = get_exp(exp_path)
         self.model = self.exp.get_model().to(self.device)
         self.model.eval()
-        ckpt = torch.load(checkpoint)
-        self.model.load_state_dict(ckpt["model"])
-        self.preproc = ValTransform(legacy=legacy)
+        if trt_mode and trt_path is not None:
+            from torch2trt import TRTModule
+            self.model.head.decode_in_inference = False
+            self.decoder = self.model.head.decode_outputs
+            
+            # warn up decoder -> YOLOX/issues/342
+            x = torch.ones(1, 3, self.exp.test_size[0], self.exp.test_size[1]).cuda()
+            self.model(x)
 
-        if fuse:
-            self.model = fuse_model(self.model)
-        if fp16:
-            self.model = self.model.half()
-        
-        self.fuse = fuse
-        self.fp16 = fp16
+            model_trt = TRTModule()
+            model_trt.load_state_dict(torch.load(trt_path))
+            self.model = model_trt
+            self.fp16 = False
+        else:
+            self.decoder = None
+            ckpt = torch.load(checkpoint)
+            self.model.load_state_dict(ckpt["model"])
+            if fuse:
+                self.model = fuse_model(self.model)
+            if fp16:
+                self.model = self.model.half()
+            self.fp16 = fp16
+
+        self.preproc = ValTransform(legacy=legacy)
 
         self.num_classes = self.exp.num_classes
         self.confthre = self.exp.test_conf
@@ -66,6 +79,8 @@ class Detector:
         with torch.no_grad():
             t0 = time.time()
             outputs = self.model(imgs)
+            if self.decoder is not None:
+                outputs = self.decoder(outputs, dtype=outputs.type())
             logger.trace("Infer time: {:.4f}s".format(time.time() - t0))
             outputs = postprocess(
                 outputs, self.num_classes, self.confthre,

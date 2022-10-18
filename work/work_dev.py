@@ -612,7 +612,7 @@ def main():
         worker._endingWork()
         logger.debug('Interrupt the work due to KeyboardInterrupt.')
     except Exception as e:
-        logger.error(e)
+        logger.exception(e)
     finally:
         logger.info('Work finished.')
         if args.stream_output is not None:

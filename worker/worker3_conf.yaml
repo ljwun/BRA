@@ -5,6 +5,8 @@ mask:
   fp16: True
   fuse: True
   legacy: False
+  trt_mode: True
+  trt_path: /BRA/pretrain/trt/FaceMask_m_trt.pth
 
 track_opt: &pt
   enable: True
@@ -26,6 +28,8 @@ person:
   fp16: True
   fuse: True
   legacy: True
+  trt_mode: True
+  trt_path: /BRA/pretrain/trt/bytetrack_m_mot17_trt.pth
   track_opt: *pt
   reid_opt: *ptreid
 

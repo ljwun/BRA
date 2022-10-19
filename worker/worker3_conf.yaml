@@ -1,4 +1,5 @@
 mask:
+  pipe_enable: True
   device: 'cuda:0'
   exp: '/BRA/exps/FaceMask_m.py'
   checkpoint: '/BRA/pretrain/FMD_m1k.pth'
@@ -22,6 +23,7 @@ reid_opt: &ptreid
   checkpoint: '/BRA/pretrain/msmt_sbs_S50.pth'
 
 person:
+  pipe_enable: True
   device: 'cuda:0'
   exp: '/BRA/third_party/ByteTrack/exps/example/mot/yolox_m_mix_det.py'
   checkpoint: '/BRA/pretrain/bytetrack_m_mot17.pth.tar'

@@ -55,29 +55,33 @@ class Worker(BaseWorker):
         self.on = False
         self.fps = None
         self.reid = reid
-
-        self.MDetector = Detector(
-            device=self.config['mask']['device'],
-            exp_path=self.config['mask']['exp'],
-            checkpoint=self.config['mask']['checkpoint'],
-            fuse=self.config['mask']['fuse'],
-            fp16=self.config['mask']['fp16'],
-            cls_name=["without_mask", "with_mask", "mask_wear_incorrect"],
-            legacy=self.config['mask']['legacy'],
-            trt_mode=self.config['mask']['trt_mode'],
-            trt_path=self.config['mask']['trt_path']
-        )
-        self.PDetector = Detector(
-            device=self.config['person']['device'],
-            exp_path=self.config['person']['exp'],
-            checkpoint=self.config['person']['checkpoint'],
-            fuse=self.config['person']['fuse'],
-            fp16=self.config['person']['fp16'],
-            cls_name=['person'],
-            legacy=self.config['person']['legacy'],
-            trt_mode=self.config['person']['trt_mode'],
-            trt_path=self.config['person']['trt_path']
-        )
+        
+        self.MDetector = None
+        if self.config['mask']['pipe_enable']:
+            self.MDetector = Detector(
+                device=self.config['mask']['device'],
+                exp_path=self.config['mask']['exp'],
+                checkpoint=self.config['mask']['checkpoint'],
+                fuse=self.config['mask']['fuse'],
+                fp16=self.config['mask']['fp16'],
+                cls_name=["without_mask", "with_mask", "mask_wear_incorrect"],
+                legacy=self.config['mask']['legacy'],
+                trt_mode=self.config['mask']['trt_mode'],
+                trt_path=self.config['mask']['trt_path']
+            )
+        self.PDetector = None
+        if self.config['person']['pipe_enable']:
+            self.PDetector = Detector(
+                device=self.config['person']['device'],
+                exp_path=self.config['person']['exp'],
+                checkpoint=self.config['person']['checkpoint'],
+                fuse=self.config['person']['fuse'],
+                fp16=self.config['person']['fp16'],
+                cls_name=['person'],
+                legacy=self.config['person']['legacy'],
+                trt_mode=self.config['person']['trt_mode'],
+                trt_path=self.config['person']['trt_path']
+            )
         self.track_parameter = {
             "track_thresh":self.config['track_opt']['track_thresh'],
             "track_buffer":self.config['track_opt']['track_buffer'],
@@ -129,40 +133,47 @@ class Worker(BaseWorker):
     def _workFlow(self, dataToWork):
         # [LEVEL_0_BLOCK]
         FList, length, FIDs = dataToWork
+        null_list = [None for _ in range(length)]
         packet = {
             'frames':FList,
             'fids':FIDs,
         }
 
         # [LEVEL_1_BLOCK] === INPUT -> frame
-        person_outputs, person_infos = self.PDetector.detect(packet['frames'])
+        person_outputs, person_infos = null_list, null_list
+        if self.config['person']['pipe_enable']:
+            person_outputs, person_infos = self.PDetector.detect(packet['frames'])
         packet['p_outputs'] = person_outputs
         packet['p_infos'] = person_infos
 
-        mask_outputs, mask_infos = self.MDetector.detect(packet['frames'])
+        mask_outputs, mask_infos = null_list, null_list
+        if self.config['mask']['pipe_enable']:
+            mask_outputs, mask_infos = self.MDetector.detect(packet['frames'])
         packet['m_outputs'] = mask_outputs
         packet['m_infos'] = mask_infos
 
         # [LEVEL_2_BLOCK] === INPUT -> LEVEL_1_PERSON_BLOCK result
-        if self.config['track_opt']['enable']:
-            tracked_person = []
-            for frame, p_output, p_info in zip(packet['frames'], packet['p_outputs'], packet['p_infos']):
-                if p_output is None:
-                    tracked_person.append([])
-                    continue
-                if self.reid:
-                    feats = self.appearanceExtractor.extract_with_crop(frame, p_output, 0.1)
-                    tracked_person.append(
-                        copy.deepcopy(
-                            self.byteTracker.update(
-                                p_output, 
-                                [p_info['height'], p_info['width']], 
-                                self.PDetector.test_size,
-                                feats
+        crowd_count = null_list
+        if self.config['person']['pipe_enable']:
+            if self.config['track_opt']['enable']:
+                tracked_person = []
+                for frame, p_output, p_info in zip(packet['frames'], packet['p_outputs'], packet['p_infos']):
+                    if p_output is None:
+                        tracked_person.append([])
+                        continue
+                    if self.reid:
+                        feats = self.appearanceExtractor.extract_with_crop(frame, p_output, 0.1)
+                        tracked_person.append(
+                            copy.deepcopy(
+                                self.byteTracker.update(
+                                    p_output, 
+                                    [p_info['height'], p_info['width']], 
+                                    self.PDetector.test_size,
+                                    feats
+                                )
                             )
                         )
-                    )
-                else:
+                        continue
                     tracked_person.append(
                         copy.deepcopy(
                             self.byteTracker.update(
@@ -171,72 +182,78 @@ class Worker(BaseWorker):
                                 self.PDetector.test_size
                             )
                         )
-                        
                     )
-            packet['tracked_person'] = tracked_person
-            packet['crowd_count'] = [len(t_person) for t_person in tracked_person]
-        else:
-            packet['tracked_person'] = [
-                self.PDetector.output_tidy(
-                    p_output.cpu().numpy(), p_info, 
-                    self.config['track_opt']['match_thresh']
-                )['person']
-            for p_output, p_info in zip(person_outputs, person_infos)]
-            packet['crowd_count'] = [len(person) for person in packet['tracked_person']]
+                packet['tracked_person'] = tracked_person
+                crowd_count = [len(t_person) for t_person in tracked_person]
+            else:
+                packet['tracked_person'] = [
+                    self.PDetector.output_tidy(
+                        p_output.cpu().numpy(), p_info, 
+                        self.config['track_opt']['match_thresh']
+                    )['person']
+                for p_output, p_info in zip(person_outputs, person_infos)]
+                crowd_count = [len(person) for person in packet['tracked_person']]
+        packet['crowd_count'] = crowd_count
 
-        mask_wearing_count, no_mask_count = [], []
-        for frame, m_output, m_info in zip(packet['frames'], packet['m_outputs'], packet['m_infos']):
-            with_mask, without_mask = [], []
-            if m_output is not None:
-                mask_out = m_output
-                # mask_out = mask_outputs[0].cpu()
-                out = self.MDetector.output_tidy(mask_out, m_info, 0.5)
-                # self.MDetector.visual_rp(frame, mask_out, m_info, 0.5)
-                with_mask = out['with_mask']+out['mask_wear_incorrect']
-                without_mask = out['without_mask']
-            mask_wearing_count.append(len(with_mask))
-            no_mask_count.append(len(without_mask))
+        mask_wearing_count, no_mask_count = null_list, null_list
+        if self.config['mask']['pipe_enable']:
+            mask_wearing_count, no_mask_count = [], []
+            for frame, m_output, m_info in zip(packet['frames'], packet['m_outputs'], packet['m_infos']):
+                with_mask, without_mask = [], []
+                if m_output is not None:
+                    mask_out = m_output
+                    # mask_out = mask_outputs[0].cpu()
+                    out = self.MDetector.output_tidy(mask_out, m_info, 0.5)
+                    # self.MDetector.visual_rp(frame, mask_out, m_info, 0.5)
+                    with_mask = out['with_mask']+out['mask_wear_incorrect']
+                    without_mask = out['without_mask']
+                mask_wearing_count.append(len(with_mask))
+                no_mask_count.append(len(without_mask))
         packet['mask_wearing_count'] = mask_wearing_count
         packet['no_mask_count'] = no_mask_count
             
         # [LEVEL_3_BLOCK] === INPUT -> tracked ID and tracked person
         # (HAND)
-        no_hand_washing_count, hand_washing_wrong_count, hand_washing_correct_count = [], [], []
-        for frame, t_person in zip(packet['frames'], packet['tracked_person']):
-            notWashIds, wrongWashIds, correctWashIds = [], [], []
-            if self.config['track_opt']['enable']:
-                notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.washFilter.work(t_person)
-                self.washFilter.visualize(frame, t_person)
-            no_hand_washing_count.append(len(notWashIds))
-            hand_washing_wrong_count.append(len(wrongWashIds))
-            hand_washing_correct_count.append(len(correctWashIds))
+        no_hand_washing_count, hand_washing_wrong_count, hand_washing_correct_count = null_list, null_list, null_list
+        if self.config['person']['pipe_enable']:
+            no_hand_washing_count, hand_washing_wrong_count, hand_washing_correct_count = [], [], []
+            for frame, t_person in zip(packet['frames'], packet['tracked_person']):
+                notWashIds, wrongWashIds, correctWashIds = [], [], []
+                if self.config['track_opt']['enable']:
+                    notWashIds, wrongWashIds, correctWashIds, c_table, b_table = self.washFilter.work(t_person)
+                    self.washFilter.visualize(frame, t_person)
+                no_hand_washing_count.append(len(notWashIds))
+                hand_washing_wrong_count.append(len(wrongWashIds))
+                hand_washing_correct_count.append(len(correctWashIds))
         packet['no_hand_washing_count'] = no_hand_washing_count
         packet['hand_washing_wrong_count'] = hand_washing_wrong_count
         packet['hand_washing_correct_count'] = hand_washing_correct_count
 
         # (DISTANCE)
-        social_distance, distance_segment_count = [], []
-        for frame, t_person in zip(packet['frames'], packet['tracked_person']):
-            if self.config['track_opt']['enable']:
-                bottom_center_points = np.asarray(
-                    [(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in t_person]
-                )
-            else:
-                bottom_center_points = np.asarray(
-                    [((p['bbox'][0]+p['bbox'][2])/2, p['bbox'][3]) for p in t_person]
-                )
-            distance = self.ipmer.calc_bev_distance(bottom_center_points)
-            social_distance.append(distance.sum() / 2)
-            distance_segment_count.append(len(bottom_center_points) * (len(bottom_center_points)-1) / 2)
-            IPMer.draw_warning_line(frame, bottom_center_points, distance, color=(0, 0, 255), thickness=6, floor=0, ceil=150.0, equal=True)
-            IPMer.draw_warning_line(frame, bottom_center_points, distance, color=(0, 133, 242), thickness=2, floor=150.0, ceil=250.0, equal=False)
-            for point in bottom_center_points:
-                cv2.circle(
-                    frame, 
-                    (np.int32(point[0]), np.int32(point[1])), 
-                    6, (0, 255, 0),
-                    -1, 8, 0
-                )
+        social_distance, distance_segment_count = null_list, null_list
+        if self.config['person']['pipe_enable']:
+            social_distance, distance_segment_count = [], []
+            for frame, t_person in zip(packet['frames'], packet['tracked_person']):
+                if self.config['track_opt']['enable']:
+                    bottom_center_points = np.asarray(
+                        [(p.tlwh[0]+p.tlwh[2]/2, p.tlwh[1]+p.tlwh[3]) for p in t_person]
+                    )
+                else:
+                    bottom_center_points = np.asarray(
+                        [((p['bbox'][0]+p['bbox'][2])/2, p['bbox'][3]) for p in t_person]
+                    )
+                distance = self.ipmer.calc_bev_distance(bottom_center_points)
+                social_distance.append(distance.sum() / 2)
+                distance_segment_count.append(len(bottom_center_points) * (len(bottom_center_points)-1) / 2)
+                IPMer.draw_warning_line(frame, bottom_center_points, distance, color=(0, 0, 255), thickness=6, floor=0, ceil=150.0, equal=True)
+                IPMer.draw_warning_line(frame, bottom_center_points, distance, color=(0, 133, 242), thickness=2, floor=150.0, ceil=250.0, equal=False)
+                for point in bottom_center_points:
+                    cv2.circle(
+                        frame, 
+                        (np.int32(point[0]), np.int32(point[1])), 
+                        6, (0, 255, 0),
+                        -1, 8, 0
+                    )
         packet['social_distance'] = social_distance
         packet['distance_segment_count'] = distance_segment_count
 
@@ -254,13 +271,25 @@ class Worker(BaseWorker):
             packet['mask_wearing_count'], packet['no_mask_count'],
             packet['no_hand_washing_count'], packet['hand_washing_wrong_count'], packet['hand_washing_correct_count']
         ):
-            avg_dist = sdist / distSegN if distSegN != 0 else 0
-            mask_ratio = maskCount / (maskCount + noMaskCount) if (maskCount + noMaskCount) != 0 else 0.0
+            avg_dist, p_dist = None, None
+            mask_ratio, p_mask_ratio = None, None
+            p_crowdCount, is_new = None, False
+            p_wash = None
+            if sdist is not None:
+                avg_dist = sdist / distSegN if distSegN != 0 else 0
+                p_dist, is_new = self.distance_metrics.step(sdist, distSegN)
+            if maskCount is not None:
+                mask_ratio = maskCount / (maskCount + noMaskCount) if (maskCount + noMaskCount) != 0 else 0.0
+                p_mask_ratio, is_new = self.mask_metrics.step(maskCount, maskCount+noMaskCount)
+            if crowdCount is not None:
+                p_crowdCount, is_new = self.person_count_metrics.step(crowdCount, 1)
+            if self.config['track_opt']['enable'] and correctWashCount is not None:
+                p_wash, is_new = self.wash_correct_metrics.step(correctWashCount, noWashCount+wrongWashCount+correctWashCount)
             texts = [
                 f'Real-time',
-                f'+ Person Count: {crowdCount:d}',
-                f'+ Average Distance: {avg_dist / 100:.2f} m',
-                f'+ Mask Ratio: {mask_ratio * 100:.2f}% ({maskCount})',
+                f'+ Person Count: {f"{crowdCount:d}" if crowdCount is not None else "not support"}',
+                f'+ Average Distance: {f"{avg_dist / 100:.2f} m" if avg_dist is not None else "not support"}',
+                f'+ Mask Ratio: {f"{mask_ratio * 100:.2f}% ({maskCount})" if mask_ratio is not None else "not support"}',
             ]
             cmb.VISBlockText(
                 frame,
@@ -269,20 +298,12 @@ class Worker(BaseWorker):
                 fg_color=(0 ,0 ,0), bg_color=(255, 255, 255),
                 point_reverse=(False,True)
             )
-            
-            p_crowdCount, is_new = self.person_count_metrics.step(crowdCount, 1)
-            p_dist, _ = self.distance_metrics.step(sdist, distSegN)
-            p_mask_ratio, _ = self.mask_metrics.step(maskCount, maskCount+noMaskCount)
-            if self.config['track_opt']['enable']:
-                p_wash, _ = self.wash_correct_metrics.step(correctWashCount, noWashCount+wrongWashCount+correctWashCount)
-            else:
-                p_wash = -1
             texts = [
                 f'Period-time',
-                f'+ Person Count: {p_crowdCount:.2f}',
-                f'+ Social Distance: {p_dist / 100:.2f} m',
-                f'+ Mask Ratio: {p_mask_ratio * 100:.2f}%',
-                f'+ Correct Wash: {f"{p_wash * 100:.2f} %" if self.config["track_opt"]["enable"] else "not support"}',
+                f'+ Person Count: {f"{p_crowdCount:.2f}" if p_crowdCount is not None else "not support"}',
+                f'+ Social Distance: {f"{p_dist / 100:.2f} m" if p_dist is not None else "not support"}',
+                f'+ Mask Ratio: {f"{p_mask_ratio * 100:.2f}%" if p_mask_ratio is not None else "not support"}',
+                f'+ Correct Wash: {f"{p_wash * 100:.2f} %" if p_wash is not None else "not support"}',
             ]
             cmb.VISBlockText(
                 frame,
@@ -291,8 +312,6 @@ class Worker(BaseWorker):
                 fg_color=(255, 255, 255), bg_color=(0 ,0 ,0),
                 point_reverse=(True,True)
             )
-
-
 
             hours, remain_second_frame = math.floor(fid / (3600*self.fps)), fid % (3600*self.fps)
             minutes, remain_second_frame = math.floor(remain_second_frame / (60*self.fps)), remain_second_frame % (60*self.fps)

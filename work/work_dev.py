@@ -624,10 +624,18 @@ def main():
                 video_writer.shutdown()
             vwriter_logFile.close()
         if args.write_to_csv:
-            if short_csv is not None and not short_csv.closed:
+            if short_csv is not None and not short_csv.closed and len(short_data_record) > 0:
+                writer = csv.DictWriter(short_csv, fieldnames=list(short_data_record[0].keys()))
+                writer.writeheader()
+                writer.writerows(short_data_record)
                 short_csv.close()
-            if full_csv is not None and not full_csv.closed:
+                short_csv = None
+            if full_csv is not None and not full_csv.closed and len(raw_data_record) > 0:
+                writer = csv.DictWriter(full_csv, fieldnames=list(raw_data_record[0].keys()))
+                writer.writeheader()
+                writer.writerows(raw_data_record)
                 full_csv.close()
+                full_csv = None
 
 if __name__ == "__main__":
     main()

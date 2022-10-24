@@ -22,7 +22,6 @@ console = Console()
 
 __proot__ = osp.normpath(osp.join(osp.dirname(__file__), ".."))
 sys.path.append(__proot__)
-from pipe_block import IPMer
 from compute_block import PolygonExtension
 
 def make_parser():

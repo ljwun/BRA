@@ -4,6 +4,12 @@ import scipy
 import lap
 from scipy.spatial.distance import cdist
 
+
+import sys, os.path as osp
+__proot__ = osp.normpath(osp.join(osp.dirname(__file__), "..", ".."))
+sys.path.append(__proot__)
+sys.path.append(osp.join(__proot__, "third_party", "ByteTrack", "yolox"))
+
 from cython_bbox import bbox_overlaps as bbox_ious
 from tracker import kalman_filter
 import time

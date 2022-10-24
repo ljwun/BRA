@@ -54,7 +54,7 @@ python -m pip install -r requirement.txt
 + view-config
   > 設定文件可參考work/xxx_conf.yaml，記錄了計算社交距離所需要的座標轉換參數，以及清潔行為檢查事先做的設定，包含定義區域、定義檢查時長。
   
-  這份設定文件可以透過tools/IConFiguration.py來進行設定。
+  這份設定文件可以透過tools/IConFiguration.py來進行設定，操作步驟可參考[這裡](view_config.md)。
 + worker-config
   > 設定文件可參考worker/worker3_conf.yaml，記錄了worker需要的參數，包含了主要管線的各式開關參數，以及模型或演算法所需參數、權重檔案等。
 
@@ -65,6 +65,8 @@ python -m pip install -r requirement.txt
   ```
 
 #### 3.EX 如果需要TensorRT
+<details><summary>[詳細]</summary>
+
   > 要以TensorRT來執行BRA的推論工作的話，需要TensorRT Python API和torch2trt的python模組。
   
   TensorRT的安裝教學可以直接參考[NVIDIA DOCUMENT](https://docs.nvidia.com/deeplearning/tensorrt/install-guide/index.html)；若是使用Jetson，安裝JetPack即可，JetPack已經附帶了包含TensorRT在內的相關資料，但若需要以不同於JetPac自帶的Python版本的話，需要重新對TensorRT做跨語言的API綁定，具體流程可參考[這裡](https://github.com/mlcommons/inference_results_v2.0/issues/2#issuecomment-1133845520)和[這裡](https://github.com/NVIDIA/TensorRT/tree/main/python)
@@ -114,6 +116,7 @@ python -m pip install -r requirement.txt
   # 最後會在儲存資料夾底下生成兩個檔案，分別為前綴.engine和前綴.pth
   # engine是給原始的tensorrt模組調用的，pth是給torch2trt調用的，torch2trt可以保證推論流程和pytorch一樣
   ```
+</details>
 
 #### 4.執行
 ```bash

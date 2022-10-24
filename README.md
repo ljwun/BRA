@@ -36,8 +36,23 @@ python -m venv .dev-env
 # GNU/Linux
 source .dev-env/bin/activate
 
-# 安裝套件
+# 安裝模組
 python -m pip install -r requirement.txt
+
+# 安裝torch相關模組
+# 需要先查詢https://pytorch.org/get-started/locally/
+# Pytorch Build : Stable
+# Your OS : 根據目標系統來選
+# Package : Pip
+# Language : Python
+# Compute Platform : 根據電腦所安裝的CUDA版本選擇
+
+# 舊版Pytorch可查詢https://pytorch.org/get-started/previous-versions/
+
+# 以CUDA11.3的Windows下，用pip安裝1.12.1版Python版的Pytorch為例
+# torchaudio 可以不安裝沒關係
+python -m pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+
 ```
 #### 3.準備需要的文件
 + 模型的權重
@@ -45,10 +60,10 @@ python -m pip install -r requirement.txt
   + 行人
     + [ByteTrack](https://github.com/ifzhang/ByteTrack/#Model-zoo)
     + [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX/#Benchmark)
-  + 口罩（[Face Mask Detection](https://www.kaggle.com/datasets/andrewmvd/face-mask-detection)）
+  + 口罩（參考資料集：[Face Mask Detection](https://www.kaggle.com/datasets/andrewmvd/face-mask-detection)）
     + [預訓練YOLOX-m](https://drive.google.com/file/d/1qOaoiGO9il8XAiR9j__pJKmISfwWWIf7/view?usp=sharing)
     + [預訓練YOLOX-nano](https://drive.google.com/file/d/1gyzccGYATmPAnF8SiT8_Qe-twUd56ki4/view?usp=sharing)
-    + 使用tools/train.py來訓練，可參考exps/FaceMask_nano.py來訓練COCO格式的資料、參考exps/FaceMask_m.py來訓練VOC格式的資料。
+    + 使用tools/train.py來訓練，可參考exps/FaceMask_nano.py來訓練COCO格式的資料、參考exps/FaceMask_m.py來訓練VOC格式的資料，更詳細的訓練步驟可參考[YOLOX/train_custom_data.md](https://github.com/Megvii-BaseDetection/YOLOX/blob/main/docs/train_custom_data.md)。
   + reid
     + [fast-reid](https://github.com/JDAI-CV/fast-reid/blob/master/MODEL_ZOO.md/MSMT17-Baseline)
 + view-config
@@ -158,7 +173,7 @@ ARGS的選項有很多，我們可以類型來分類
 ##### + 其他
 |短前綴|長前綴|參數|意義|
 |------|------|------|------|
-|-en|--output_encoder|ffmpeg編碼器|可以使用`ffmpeg -codecs來查詢`|
+|-en|--output_encoder|ffmpeg編碼器|可以使用`ffmpeg -codecs`來查詢|
 ||--log_level|ERROR、WARN、INFO、DEBUG、TRACE|work的輸出日誌層級|
 ||--io_backend|FFMPEG、GSTREAMER|輸入和輸出所要使用的後端|
 |-h|--help||列出所有參數|

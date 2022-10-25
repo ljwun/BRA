@@ -65,7 +65,7 @@ python -m pip install torch torchvision torchaudio --extra-index-url https://dow
     + [預訓練YOLOX-nano](https://drive.google.com/file/d/1gyzccGYATmPAnF8SiT8_Qe-twUd56ki4/view?usp=sharing)
     + 使用tools/train.py來訓練，可參考exps/FaceMask_nano.py來訓練COCO格式的資料、參考exps/FaceMask_m.py來訓練VOC格式的資料，更詳細的訓練步驟可參考[YOLOX/train_custom_data.md](https://github.com/Megvii-BaseDetection/YOLOX/blob/main/docs/train_custom_data.md)。
   + reid
-    + [fast-reid](https://github.com/JDAI-CV/fast-reid/blob/master/MODEL_ZOO.md/MSMT17-Baseline)
+    + [fast-reid](https://github.com/JDAI-CV/fast-reid/blob/master/MODEL_ZOO.md/#MSMT17-Baseline)
 + view-config
   > 設定文件可參考work/xxx_conf.yaml，記錄了計算社交距離所需要的座標轉換參數，以及清潔行為檢查事先做的設定，包含定義區域、定義檢查時長。
   
@@ -138,42 +138,85 @@ python -m pip install torch torchvision torchaudio --extra-index-url https://dow
 cd work
 python ./work_dev.py $ARGS
 ```
-ARGS的選項有很多，我們可以類型來分類
+ARGS的選項有很多，我們可以類型來分類，其中「*」代表必填
 ##### + 輸入輸出
-|短前綴|長前綴|參數|意義|
-|------|------|------|------|
-|-vin |--video_input  |輸入源||
-|-vout|--video_output |輸出源||
-|-s   |--output_scale |(寬度):(長度)|輸出的影像尺寸，使用-1可以自斷推斷|
-|-so  |--stream_output|串流輸出源||
-|-csv |--write_to_csv |用來儲存每個時間的計算結果的csv檔||
+||短前綴|長前綴|參數|意義|
+|------|------|------|------|------|
+|*|-vin |--video_input  |輸入源||
+||-vout|--video_output |輸出源||
+||-s   |--output_scale |(寬度):(長度)|輸出的影像尺寸，使用-1可以自斷推斷|
+||-so  |--stream_output|串流輸出源||
+||-csv |--write_to_csv |用來儲存每個時間的計算結果的csv檔||
 
 ##### + 日誌
-|短前綴|長前綴|參數|意義|
-|------|------|------|------|
-|-vlog|--vout_log|輸出源日誌檔案||
-|-slog|--stream_log|串流輸出源日誌檔案||
+||短前綴|長前綴|參數|意義|
+|------|------|------|------|------|
+||-vlog|--vout_log|輸出源日誌檔案||
+||-slog|--stream_log|串流輸出源日誌檔案||
 
 ##### + 流程的控制參數
-|短前綴|長前綴|參數|意義|
-|------|------|------|------|
-||--legacy||只處理一次輸入源就結束|
-|-b   |--batch_size   |最大的一次執行批次數 ||
-|-fps |--fps          |浮點數               |預設是從輸入源的header||
-|-ss  |--start_second |hh:mm:ss.ms 或秒數   |輸入源的起始位置||
-|-d   |--duration     |hh:mm:ss.ms 或秒數   |預計的處理長度||
+||短前綴|長前綴|參數|意義|
+|------|------|------|------|------|
+|||--legacy||只處理一次輸入源就結束|
+||-b   |--batch_size   |最大的一次執行批次數 ||
+||-fps |--fps          |浮點數               |預設是從輸入源的header||
+||-ss  |--start_second |hh:mm:ss.ms 或秒數   |輸入源的起始位置||
+||-d   |--duration     |hh:mm:ss.ms 或秒數   |預計的處理長度||
 
 ##### + 需要的設定檔
-|短前綴|長前綴|參數|意義|
-|------|------|------|------|
-|-vc  |--view_config|view_config設定文件||
-|-wc  |--worker_config|worker_config設定文件||
-|-worker|--worker_file|worker文件|默認是使用worker/worker3.py||
+||短前綴|長前綴|參數|意義|
+|------|------|------|------|------|
+|*|-vc  |--view_config|view_config設定文件||
+|*|-wc  |--worker_config|worker_config設定文件||
+||-worker|--worker_file|worker文件|默認是使用worker/worker3.py||
 
 ##### + 其他
-|短前綴|長前綴|參數|意義|
-|------|------|------|------|
-|-en|--output_encoder|ffmpeg編碼器|可以使用`ffmpeg -codecs`來查詢|
-||--log_level|ERROR、WARN、INFO、DEBUG、TRACE|work的輸出日誌層級|
-||--io_backend|FFMPEG、GSTREAMER|輸入和輸出所要使用的後端|
-|-h|--help||列出所有參數|
+||短前綴|長前綴|參數|意義|
+|------|------|------|------|------|
+||-en|--output_encoder|ffmpeg編碼器|可以使用`ffmpeg -codecs`來查詢|
+|||--log_level|ERROR、WARN、INFO、DEBUG、TRACE|work的輸出日誌層級|
+|||--io_backend|FFMPEG、GSTREAMER|輸入和輸出所要使用的後端|
+||-h|--help||列出所有參數|
+
+最簡單的範例
+```bash
+# 記得啟動python的虛擬環境
+cd work
+python ./work_dev.py -vin 輸入影像 -wc work-config -vc view-config --legacy
+```
+上面這段指令會等輸入影像執行完就結束，但由於沒有指令輸出的相關參數，所以並不會儲存任何資料。
+
+```bash
+# 記得啟動python的虛擬環境
+cd work
+python ./work_dev.py -vin 輸入影像 -vout 輸出影像 -csv CSV檔案 -wc work-config -vc view-config --legacy
+```
+這段則會額外將輸出渲染成輸出影像，默認通過FFmpeg使用h264_nvenc編碼，日誌存在默認的當前工作資料夾下的work/video_storing.log；同時會輸出兩份CSV檔案，分別是按幀的原始資料，以及每1分鐘處理過的資料。
+
+```bash
+# 記得啟動python的虛擬環境
+cd work
+python ./work_dev.py -vin 輸入影像 -vout 輸出影像 -csv CSV檔案 -wc work-config -vc view-config -fps 15 -b 16 -d 00:02:00 --legacy
+```
+這段指定了批次大小，能一次執行多張影像；同時還指定了處理時間，這裡希望處理兩分鐘長度的影像後就結束；指定了fps代表原始的輸入影像所提供的fps資訊不准，手動告知程式。
+
+最後，假如使用FFmpeg時需要不同的編碼器，可能是機器不支援h264_nvenc，或是希望使用其他編碼方式，我們可以通過ffmpeg指令來查詢
+```bash
+ffmpeg -codecs | grep "編碼方式"
+
+# 以h265來舉例
+ffmpeg -codecs | grep "hevc"
+# powershell可使用
+ffmpeg -codecs | Select-String "hevc"
+# 輸出
+ DEV.L. hevc                 H.265 / HEVC (High Efficiency Video Coding) (decoders: hevc hevc_qsv hevc_cuvid )
+ (encoders: libx265 hevc_amf hevc_mf hevc_nvenc hevc_qsv )
+# 這代表我的機器支援的h265編碼器有libx265、hevc_amf、hevc_mf、hevc_nvenc hevc_qsv
+```
+透過指定`-en`或`--output_encoder`參數就能指定編碼器了
+```bash
+# 記得啟動python的虛擬環境
+cd work
+python ./work_dev.py -vin 輸入影像 -vout 輸出影像 -csv CSV檔案 -wc work-config -vc view-config -fps 15 -b 16 -d 00:02:00 -en hevc_nvenc --legacy
+```
+這次我們使用了h265的編碼方式，同樣使用NVIDIA的GPU上的硬體加速來進行編碼。

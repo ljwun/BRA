@@ -531,7 +531,6 @@ def main():
                     _text_size = cv2.getTextSize('WAIT SIGNAL...', cv2.FONT_HERSHEY_SIMPLEX, 6, 7)[0]
                     _pos = ((stored_size[0] - _text_size[0]) // 2 , (stored_size[1] + _text_size[1]) // 2)
                     cv2.putText(null_frame, 'WAIT SIGNAL...', _pos, cv2.FONT_HERSHEY_SIMPLEX, 6, (255, 255, 255), 7)
-                    null_frame = null_frame.tobytes()
                     logger.debug(f'Decide result dimension is {stored_size}.')
                 shouldResize = source_size != stored_size
 
@@ -583,8 +582,8 @@ def main():
                 if video_writer is not None:
                     logger.trace(f'video writer has {len(video_writer.pipe)} elements in pipe')
             elif len(events) == 0:
-                for _ in range(int(worker.fps)):
-                    if stream_publisher is not None and stream_publisher.opened and null_frame is not None:
+                if stream_publisher is not None and stream_publisher.opened and null_frame is not None:
+                    for _ in range(int(worker.fps)):
                         stream_publisher.pipe.append(null_frame)
                 time.sleep(1)
                 logger.trace(f'sleep 1 second')

@@ -538,7 +538,7 @@ def main():
                 datetime_tag = datetime.datetime.now().strftime(r'%Y%m%d_%H%M')
                 if args.video_output is not None:
                     vwriter_filename = f'{args.video_output}{datetime_tag}.mkv' if not args.legacy else args.video_output
-                    video_writer.start(stored_size, args.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
+                    video_writer.start(stored_size, worker.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
                     logger.info(f'Decide the name of save video is : {vwriter_filename}')
                 if args.write_to_csv is not None:
                     short_table_name = f'{args.write_to_csv}{datetime_tag}.csv' if not args.legacy else args.write_to_csv
@@ -548,7 +548,7 @@ def main():
                     full_csv = open(full_table_name, 'w', newline='')
                     logger.info(f'Decide the name of complete csv is : {full_table_name}')
                 if args.stream_output is not None and not stream_publisher.opened:
-                    stream_publisher.start(stored_size, args.fps, args.output_encoder, args.stream_output, stream_logFile, null_frame)
+                    stream_publisher.start(stored_size, worker.fps, args.output_encoder, args.stream_output, stream_logFile, null_frame)
             if result is not None:
                 fids, frames, raw_data, short_data = result
                 raw_data_record += raw_data
@@ -583,7 +583,7 @@ def main():
                 if video_writer is not None:
                     logger.trace(f'video writer has {len(video_writer.pipe)} elements in pipe')
             elif len(events) == 0:
-                for _ in range(int(args.fps)):
+                for _ in range(int(worker.fps)):
                     if stream_publisher is not None and stream_publisher.opened and null_frame is not None:
                         stream_publisher.pipe.append(null_frame)
                 time.sleep(1)

@@ -12,7 +12,7 @@ from yolox.utils import fuse_model, postprocess
 from yolox.exp import get_exp
 
 class Detector:
-    def __init__(self, device, exp_path, checkpoint, fuse, fp16, cls_name, legacy=False, trt_mode=False, trt_path=None):
+    def __init__(self, device, exp_path, checkpoint, fuse, fp16, cls_name, legacy=False, trt_mode=False, trt_path=None, trt_batch=1, trt_workspace=32):
         self.device = re.match("cpu|cuda(:\d*)?", device)
         assert self.device != None, f"Cannot resolve target device string ${device}"
         self.device = self.device.group(0)
@@ -29,10 +29,20 @@ class Detector:
             from torch2trt import TRTModule
             self.model.head.decode_in_inference = False
             self.decoder = self.model.head.decode_outputs
-            
+
             # warn up decoder -> YOLOX/issues/342
             x = torch.ones(1, 3, self.exp.test_size[0], self.exp.test_size[1]).cuda()
             self.model(x)
+
+            if not os.path.exists(trt_path):
+                import socket
+                trt_path = f'{osp.splitext(trt_path)[0]}_{socket.gethostname()}.pth'
+            if not os.path.exists(trt_path):
+                logger.info(f'Not detect existed trt module. Run torch2trt...')
+                logger.info(f'Target name is {trt_path}')
+                logger.info(f'trt_batch={trt_batch}, trt_workspace={trt_workspace}')
+                self.gen_trt(exp_path=exp_path, checkpoint=checkpoint, fp16=fp16, trt_prefix=osp.splitext(trt_path)[0], trt_batch=trt_batch, trt_workspace=trt_workspace)
+                logger.info("Converted TensorRT model done.")
 
             model_trt = TRTModule()
             model_trt.load_state_dict(torch.load(trt_path))
@@ -135,6 +145,28 @@ class Detector:
                 'score':score,
             })
         return format_out
+
+    @torch.no_grad()
+    def gen_trt(self, exp_path, checkpoint, fp16, trt_prefix , trt_batch=1, trt_workspace=32):
+        from torch2trt import torch2trt
+        import tensorrt as trt
+        exp = get_exp(exp_path)
+        model = exp.get_model()
+        ckpt = torch.load(checkpoint, map_location="cpu")
+        model.load_state_dict(ckpt["model"])
+        model.eval()
+        model.cuda()
+        model.head.decode_in_inference = False
+        x = torch.rand(1, 3, exp.test_size[0], exp.test_size[1]).cuda()
+        model_trt = torch2trt(
+            model,
+            [x],
+            fp16_mode=True,
+            log_level=trt.Logger.ERROR,
+            max_workspace_size=(1 << trt_workspace),
+            max_batch_size=trt_batch,
+        )
+        torch.save(model_trt.state_dict(), f'{trt_prefix}.pth')
 
 _COLORS = np.array(
     [

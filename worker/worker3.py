@@ -67,7 +67,9 @@ class Worker(BaseWorker):
                 cls_name=["without_mask", "with_mask", "mask_wear_incorrect"],
                 legacy=self.config['mask']['legacy'],
                 trt_mode=self.config['mask']['trt_mode'],
-                trt_path=self.config['mask']['trt_path']
+                trt_path=self.config['mask']['trt_path'],
+                trt_batch=None if 'trt_batch' not in self.config['mask'] else self.config['mask']['trt_batch'],
+                trt_workspace=None if 'trt_workspace' not in self.config['mask'] else self.config['mask']['trt_workspace'],
             )
         self.PDetector = None
         if self.config['person']['pipe_enable']:
@@ -80,7 +82,9 @@ class Worker(BaseWorker):
                 cls_name=['person'],
                 legacy=self.config['person']['legacy'],
                 trt_mode=self.config['person']['trt_mode'],
-                trt_path=self.config['person']['trt_path']
+                trt_path=self.config['person']['trt_path'],
+                trt_batch=None if 'trt_batch' not in self.config['person'] else self.config['person']['trt_batch'],
+                trt_workspace=None if 'trt_workspace' not in self.config['person'] else self.config['person']['trt_workspace'],
             )
         self.track_parameter = {
             "track_thresh":self.config['track_opt']['track_thresh'],

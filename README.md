@@ -131,6 +131,10 @@ python -m pip install torch torchvision torchaudio --extra-index-url https://dow
   # 最後會在儲存資料夾底下生成兩個檔案，分別為前綴.engine和前綴.pth
   # engine是給原始的tensorrt模組調用的，pth是給torch2trt調用的，torch2trt可以保證推論流程和pytorch一樣
   ```
+
+  除了手動以tools/trt.py來生成trt檔案外，系統有提供動態生成的機制，這也是為甚麼worker/worker3_conf.yaml中有`trt_batch: 16`和`trt_workspace: 34`這兩個參數，他們分別代表了上例中的`-b`和`-w`參數，不過檔案名稱將會是worker/worker3_conf.yaml中的`trt_path`參數插入hostname，不過不需要額外修改`trt_path`，讀取時會自動判斷。
+
+  > **NOTE:** trt engine都是完全依賴環境的，一旦環境有變動，例如變更硬體，這份資料需要重新生成，也因此這份資料不能事先生成再遷移。
 </details>
 
 #### 4.執行
@@ -200,7 +204,7 @@ python ./work_dev.py -vin 輸入影像 -vout 輸出影像 -csv CSV檔案 -wc wor
 ```
 這段指定了批次大小，能一次執行多張影像；同時還指定了處理時間，這裡希望處理兩分鐘長度的影像後就結束；指定了fps代表原始的輸入影像所提供的fps資訊不准，手動告知程式。
 
-最後，假如使用FFmpeg時需要不同的編碼器，可能是機器不支援h264_nvenc，或是希望使用其他編碼方式，我們可以通過ffmpeg指令來查詢
+假如使用FFmpeg時需要不同的編碼器，可能是機器不支援h264_nvenc，或是希望使用其他編碼方式，我們可以通過ffmpeg指令來查詢
 ```bash
 ffmpeg -codecs | grep "編碼方式"
 
@@ -220,3 +224,12 @@ cd work
 python ./work_dev.py -vin 輸入影像 -vout 輸出影像 -csv CSV檔案 -wc work-config -vc view-config -fps 15 -b 16 -d 00:02:00 -en hevc_nvenc --legacy
 ```
 這次我們使用了h265的編碼方式，同樣使用NVIDIA的GPU上的硬體加速來進行編碼。
+
+可以發現上面所有的例子都有一個參數`--legacy`，這代表系統只會處理一次輸入，當輸入源錯誤的話則會報錯；相反的，若取消`--legacy`參數，系統將會持續嘗試訪問輸入源，不僅如此，當輸入源從可以訪問到不能訪問，系統仍會持續等待，這種模式能搭配串流輸入源來使用，一旦接收到輸入源便會開始處理，一旦接收不到輸入源便會儲存這一輪的處理資料，並等待下一輪的輸入
+```bash
+# 記得啟動python的虛擬環境
+cd work
+python ./work_dev.py -vin rtmp://server_ip:1935/channel -vout 輸出影像前綴 -csv CSV檔案前綴 -wc work-config -vc view-config -fps 15 -b 16 -d 00:02:00 -en hevc_nvenc
+```
+這個例子中，我們移除了`--legacy`參數，輸入源改成rtmp的串流源，程式會以輪詢的方式向多媒體伺服器請求。
+> **WARN:** `-vout`和`-csv`參數的意義在非legacy模式中已經變成前綴，在處理完一輪後，系統會以這個前綴加上日期時間以及副檔名來儲存資料。

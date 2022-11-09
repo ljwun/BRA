@@ -439,7 +439,7 @@ def main():
             raise ValueError('The strings specified for scaling size are not correct. Please use "(width):(height)". And you can specify one of them to be -1 to automatically scale, but not both.')
     if args.legacy:
         logger.warning('Legacy is enable!')
-    if args.io_backend != "FFMPEG" and args.io_backend != "GSTREAMER":
+    if args.io_backend != "FFMPEG" and args.io_backend != "GSTREAMER" and args.io_backend != "MIXFG" and args.io_backend != "MIXGF":
         logger.warning(f"io backend type:{args.io_backend} is not support. System will use default setting:FFMPEG.")
         args.io_backend = "FFMPEG"
 
@@ -452,7 +452,7 @@ def main():
         reid=args.reid,
         start_second = args.start_second,
         batch_size=args.batch_size,
-        io_backend = args.io_backend
+        io_backend = 'FFMPEG' if args.io_backend=='FFMPEG' or args.io_backend=='MIXFG' else 'GSTREAMER'
     )
 
 
@@ -469,7 +469,7 @@ def main():
     video_writer = None
     if args.video_output is not None:
         vwriter_logFile = open(args.vout_log, 'w')
-        if args.io_backend == "FFMPEG":
+        if args.io_backend == "FFMPEG" or args.io_backend == "MIXGF" :
             video_writer = segment_publisher_ffmpeg()
         else:
             video_writer = segment_publisher_gst()
@@ -478,7 +478,7 @@ def main():
     stream_publisher = None
     if args.stream_output is not None:
         stream_logFile = open(args.stream_log, 'w')
-        if args.io_backend == "FFMPEG":
+        if args.io_backend == "FFMPEG" or args.io_backend == "MIXGF" :
             stream_publisher = publisher_ffmpeg()
         else:
             stream_publisher = publisher_gst()

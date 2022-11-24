@@ -226,7 +226,7 @@ class publisher_gst:
         self.opened = False
         self.pipe = deque()
         self.writer = None
-        self.gst_pattern = r"appsrc ! video/x-raw, format=BGR ! queue ! videoconvert ! video/x-raw,format=I420 ! nvvidconv ! video/x-raw(memory:NVMM) ! nvoverlaysink sync=false"
+        self.gst_pattern = r"appsrc ! video/x-raw, format=BGR ! queue ! videoscale ! video/x-raw,width=960 ! videoconvert ! ximagesink sync=false"
         self.null_frame = None
         self.thread_worker = Thread(target=self.run)
         self.sleep_duration = None

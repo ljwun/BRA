@@ -299,7 +299,7 @@ class Worker(BaseWorker):
                 frame,
                 texts, (0, 0),
                 ratio=1, thickness=3,
-                fg_color=(0 ,0 ,0), bg_color=(255, 255, 255),
+                fg_color=(0 ,0 ,0), bg_color=(255, 255, 255, 0.4),
                 point_reverse=(False,True)
             )
             texts = [
@@ -313,7 +313,7 @@ class Worker(BaseWorker):
                 frame,
                 texts, (0, 0),
                 ratio=1, thickness=3,
-                fg_color=(255, 255, 255), bg_color=(0 ,0 ,0),
+                fg_color=(255, 255, 255), bg_color=(0 ,0 ,0, 0.4),
                 point_reverse=(True,True)
             )
 

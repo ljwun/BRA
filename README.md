@@ -38,21 +38,21 @@ source .dev-env/bin/activate
 
 # 安裝模組
 python -m pip install -r requirement.txt
-
+```
+接下來我們必須要安裝pytorch和torchvision，這兩個模組會依賴預安裝的CUDA，如果還沒請[下載](https://developer.nvidia.com/cuda-toolkit-archive)並安裝。
+> **WARM:** 請注意，Pytorch並不是每一個版本的CUDA都支援，請先查詢。
+> 
+確認安裝好後，需要先到[Pytorch](https://pytorch.org/get-started/locally/)或是[Pytorch舊版檔案](https://pytorch.org/get-started/previous-versions/)來查詢安裝指令。請務必根據自己的「作業系統」、「CUDA版本」來進行選擇，「模組管理」這邊使用pip，「語言」請選擇Python。
+```bash
 # 安裝torch相關模組
-# 需要先查詢https://pytorch.org/get-started/locally/
-# Pytorch Build : Stable
-# Your OS : 根據目標系統來選
-# Package : Pip
-# Language : Python
-# Compute Platform : 根據電腦所安裝的CUDA版本選擇
 
-# 舊版Pytorch可查詢https://pytorch.org/get-started/previous-versions/
-
-# 以CUDA11.3的Windows下，用pip安裝1.12.1版Python版的Pytorch為例
-# torchaudio 可以不安裝沒關係
-python -m pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
-
+# 這邊以非最新版的Pytorch 1.12.1來做示範
+# 首先查詢https://pytorch.org/get-started/previous-versions/
+# 找到v1.12.1，往下找到Wheel
+# 再往下找到你所用的作業系統，這邊選擇Windows
+# 在指令區段找到自己CUDA的版本，這邊選擇11.3
+# 我們不安裝torchaudio
+python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
 ```
 #### 3.準備需要的文件
 + 模型的權重

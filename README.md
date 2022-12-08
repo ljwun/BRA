@@ -56,7 +56,12 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
 ```
 #### 3.準備需要的文件
 + 模型的權重
-  > 可以參考如下的預訓練權重
+  > 預設的worker/worker3_conf.yaml使用的權重可以直接從這裡來下載。
+  > + [bytetrack_m_mot17.pth.tar](https://drive.google.com/file/d/11Zb0NN_Uu7JwUd9e6Nk8o2_EUfxWqsun/view?usp=sharing)
+  > + [FMD_m1k.pth](https://drive.google.com/file/d/1qOaoiGO9il8XAiR9j__pJKmISfwWWIf7/view?usp=sharing)
+  > + [msmt_sbs_S50.pth](https://github.com/JDAI-CV/fast-reid/releases/download/v0.1.1/msmt_sbs_S50.pth)
+  
+  完整的下載列表參考（可以根據平台的計算能力來選擇權重）
   + 行人
     + [ByteTrack](https://github.com/ifzhang/ByteTrack/#Model-zoo)
     + [YOLOX](https://github.com/Megvii-BaseDetection/YOLOX/#Benchmark)

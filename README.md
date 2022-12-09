@@ -54,6 +54,193 @@ python -m pip install -r requirement.txt
 # 我們不安裝torchaudio
 python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
 ```
+<details><summary>為OpenCV啟用Gstreamer（不使用GSTREAMER後端時可以跳過）</summary>
+
+  **Windows下:**
+  > **WARM:** OpenCV 4.5.5在Windows上編譯Gstreamer功能會出現[問題](https://github.com/opencv/opencv/issues/21393)，目前建議使用4.6.0來編譯。
+
+  > **TIPS:** 除了以下寫出的需要下載和安裝的軟體，在編譯過程我們還會使用到[Visual Studio 2019 with C++](https://my.visualstudio.com/Downloads?q=visual%20studio%202019&wt.mc_id=o~msft~vscom~older-downloads)、[FFmpeg](https://www.gyan.dev/ffmpeg/builds/)(請記得將bin/資料夾加到環境變數Path裡)、[CMake](https://cmake.org/download/)，請自行安裝。
+  1. [下載](https://gstreamer.freedesktop.org/download/)並安裝Gstreamer runtime和development。
+       > **IMPORTANT:** 請選擇完整安裝。
+  2. 下載[OpenCV4.6.0原始碼](https://github.com/opencv/opencv/archive/4.6.0.zip)
+  3. 下載[OpenCV_contrib 4.6.0](https://github.com/opencv/opencv_contrib/archive/4.6.0.zip)
+  4. 下載[Eigen3.4.0](https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip)
+  5. 解所有壓縮檔解壓縮，並新建一個`build`資料夾。
+  6. 將Gstreamer安裝資料夾底下的`gstreamer\1.0\msvc_x86_64\bin`加入Path變數裡面。
+       > **IMPORTANT:** CMake之後會依據用戶的Path來測試，所以優先加入到使用者的Path裡，而不是系統的Path。
+  7. 打開CMake-gui，在`Where is the source code`欄位填入解壓縮後的OpenCV資料夾，這邊示範的位置是`V:/dev/opencv/opencv-4.6.0`；在`Where to build the binaries`欄位填入剛剛新建立的build資料夾，這邊示範的位置是`V:/dev/opencv/build`。可參照下圖的紅色標記：
+        ![opencv_installation0.png](PNG/opencv_installation0.png)
+  8. 填入後按下上圖藍色的「Configure」，選擇Visual Studio 16 2019並按下Finsh，之後會開始自動檢測環境，等他跑完會產生如下圖中粉紅色框中的資訊：
+        ![opencv_installation1.png](PNG/opencv_installation1.png)
+  我們需要確認Gstreamer是否被偵測到可以向上拉找到Video I/O的欄位，顯示YES代表偵測到Gstreamer了
+        ```bash
+        Video I/O:
+          DC1394:                      NO
+          FFMPEG:                      YES (prebuilt binaries)
+            avcodec:                   YES (58.134.100)
+            avformat:                  YES (58.76.100)
+            avutil:                    YES (56.70.100)
+            swscale:                   YES (5.9.100)
+            avresample:                YES (4.0.0)
+          GStreamer:                   YES (1.20.4)
+          DirectShow:                  YES
+          Media Foundation:            YES
+            DXVA:                      YES
+        ```
+  9.  接下我們要調整`OPENCV_EXTRA_MODULES_PATH`的參數，我們可以透過如下圖中的黃色框來搜尋，並將我們解壓縮後的contrib資料夾底下的modules的位置填入，如下圖中的藍色框，示範使用的位置為`V:/dev/opencv/opencv_contrib-4.6.0/modules`。
+        ![opencv_installation2.png](PNG/opencv_installation2.png)
+  同樣的方法，我們將`EIGEN_INCLUDE_PATH`修改為剛剛解壓縮的eigen 3.4.0資料夾，示範使用的位置是`V:\CppLibrary\eigen-3.4.0`。
+  最後將`BUILD_opencv_world`參數啟用，將`BUILD_SHARED_LIBS`參數關閉。
+  10.  設定完成後再進行一次configuration，下面的是範例的輸出內容：
+        ```bash
+        General configuration for OpenCV 4.6.0 =====================================
+          Version control:               unknown
+        
+          Extra modules:
+            Location (extra):            V:/dev/opencv/opencv_contrib-4.6.0/modules
+            Version control (extra):     unknown
+        
+          Platform:
+            Timestamp:                   2022-12-09T13:06:44Z
+            Host:                        Windows 10.0.22623 AMD64
+            CMake:                       3.20.0-rc2
+            CMake generator:             Visual Studio 16 2019
+            CMake build tool:            C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/MSBuild/Current/Bin/MSBuild.exe
+            MSVC:                        1929
+            Configuration:               Debug Release
+        
+          CPU/HW features:
+            Baseline:                    SSE SSE2 SSE3
+              requested:                 SSE3
+            Dispatched code generation:  SSE4_1 SSE4_2 FP16 AVX AVX2 AVX512_SKX
+              requested:                 SSE4_1 SSE4_2 AVX FP16 AVX2 AVX512_SKX
+              SSE4_1 (18 files):         + SSSE3 SSE4_1
+              SSE4_2 (2 files):          + SSSE3 SSE4_1 POPCNT SSE4_2
+              FP16 (1 files):            + SSSE3 SSE4_1 POPCNT SSE4_2 FP16 AVX
+              AVX (5 files):             + SSSE3 SSE4_1 POPCNT SSE4_2 AVX
+              AVX2 (33 files):           + SSSE3 SSE4_1 POPCNT SSE4_2 FP16 FMA3 AVX AVX2
+              AVX512_SKX (8 files):      + SSSE3 SSE4_1 POPCNT SSE4_2 FP16 FMA3 AVX AVX2 AVX_512F AVX512_COMMON AVX512_SKX
+        
+          C/C++:
+            Built as dynamic libs?:      NO
+            C++ standard:                11
+            C++ Compiler:                C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe  (ver 19.29.30146.0)
+            C++ flags (Release):         /DWIN32 /D_WINDOWS /W4 /GR  /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE /D _SCL_SECURE_NO_WARNINGS /Gy /bigobj /Oi  /fp:precise     /EHa /wd4127 /wd4251 /wd4324 /wd4275 /wd4512 /wd4589 /MP  /MT /O2 /Ob2 /DNDEBUG 
+            C++ flags (Debug):           /DWIN32 /D_WINDOWS /W4 /GR  /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE /D _SCL_SECURE_NO_WARNINGS /Gy /bigobj /Oi  /fp:precise     /EHa /wd4127 /wd4251 /wd4324 /wd4275 /wd4512 /wd4589 /MP  /MTd /Zi /Ob0 /Od /RTC1 
+            C Compiler:                  C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.29.30133/bin/Hostx64/x64/cl.exe
+            C flags (Release):           /DWIN32 /D_WINDOWS /W3  /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE /D _SCL_SECURE_NO_WARNINGS /Gy /bigobj /Oi  /fp:precise     /MP   /MT /O2 /Ob2 /DNDEBUG 
+            C flags (Debug):             /DWIN32 /D_WINDOWS /W3  /D _CRT_SECURE_NO_DEPRECATE /D _CRT_NONSTDC_NO_DEPRECATE /D _SCL_SECURE_NO_WARNINGS /Gy /bigobj /Oi  /fp:precise     /MP /MTd /Zi /Ob0 /Od /RTC1 
+            Linker flags (Release):      /machine:x64  /NODEFAULTLIB:atlthunk.lib /INCREMENTAL:NO  /NODEFAULTLIB:libcmtd.lib /NODEFAULTLIB:libcpmtd.lib /NODEFAULTLIB:msvcrtd.lib
+            Linker flags (Debug):        /machine:x64  /NODEFAULTLIB:atlthunk.lib /debug /INCREMENTAL  /NODEFAULTLIB:libcmt.lib /NODEFAULTLIB:libcpmt.lib /NODEFAULTLIB:msvcrt.lib
+            ccache:                      NO
+            Precompiled headers:         NO
+            Extra dependencies:          comctl32 gdi32 ole32 setupapi Iconv::Iconv wsock32 ws2_32
+            3rdparty dependencies:       libprotobuf libjpeg-turbo libwebp libpng libtiff libopenjp2 IlmImf zlib quirc ade ittnotify ippiw ippicv
+        
+          OpenCV modules:
+            To be built:                 alphamat aruco barcode bgsegm bioinspired calib3d ccalib core datasets dnn dnn_objdetect dnn_superres dpm face features2d flann fuzzy gapi hfs highgui img_hash imgcodecs imgproc intensity_transform line_descriptor mcc ml objdetect optflow phase_unwrapping photo plot python3 quality rapid reg rgbd saliency shape stereo stitching structured_light superres surface_matching text tracking ts video videoio videostab wechat_qrcode world xfeatures2d ximgproc xobjdetect xphoto
+            Disabled:                    -
+            Disabled by dependency:      -
+            Unavailable:                 cudaarithm cudabgsegm cudacodec cudafeatures2d cudafilters cudaimgproc cudalegacy cudaobjdetect cudaoptflow cudastereo cudawarping cudev cvv freetype hdf java julia matlab ovis python2 python2 sfm viz
+            Applications:                tests perf_tests apps
+            Documentation:               NO
+            Non-free algorithms:         NO
+        
+          Windows RT support:            NO
+        
+          GUI: 
+            Win32 UI:                    YES
+            VTK support:                 NO
+        
+          Media I/O: 
+            ZLib:                        build (ver 1.2.12)
+            JPEG:                        build-libjpeg-turbo (ver 2.1.2-62)
+            WEBP:                        build (ver encoder: 0x020f)
+            PNG:                         build (ver 1.6.37)
+            TIFF:                        build (ver 42 - 4.2.0)
+            JPEG 2000:                   build (ver 2.4.0)
+            OpenEXR:                     build (ver 2.3.0)
+            HDR:                         YES
+            SUNRASTER:                   YES
+            PXM:                         YES
+            PFM:                         YES
+        
+          Video I/O:
+            DC1394:                      NO
+            FFMPEG:                      YES (prebuilt binaries)
+              avcodec:                   YES (58.134.100)
+              avformat:                  YES (58.76.100)
+              avutil:                    YES (56.70.100)
+              swscale:                   YES (5.9.100)
+              avresample:                YES (4.0.0)
+            GStreamer:                   YES (1.20.4)
+            DirectShow:                  YES
+            Media Foundation:            YES
+              DXVA:                      YES
+        
+          Parallel framework:            Concurrency
+        
+          Trace:                         YES (with Intel ITT)
+        
+          Other third-party libraries:
+            Intel IPP:                   2020.0.0 Gold [2020.0.0]
+                   at:                   V:/dev/opencv/build/3rdparty/ippicv/ippicv_win/icv
+            Intel IPP IW:                sources (2020.0.0)
+                      at:                V:/dev/opencv/build/3rdparty/ippicv/ippicv_win/iw
+            Lapack:                      NO
+            Eigen:                       YES (ver 3.4.0)
+            Custom HAL:                  NO
+            Protobuf:                    build (3.19.1)
+        
+          OpenCL:                        YES (NVD3D11)
+            Include path:                V:/dev/opencv/opencv-4.6.0/3rdparty/include/opencl/1.2
+            Link libraries:              Dynamic load
+        
+          Python 3:
+            Interpreter:                 C:/Program Files/Python39/python.exe (ver 3.9.4)
+            Libraries:                   C:/Program Files/Python39/libs/python39.lib (ver 3.9.4)
+            numpy:                       C:/Program Files/Python39/lib/site-packages/numpy/core/include (ver 1.23.5)
+            install path:                C:/Program Files/Python39/Lib/site-packages/cv2/python-3.9
+        
+          Python (for build):            C:/Program Files/Python39/python.exe
+        
+          Java:                          
+            ant:                         NO
+            JNI:                         NO
+            Java wrappers:               NO
+            Java tests:                  NO
+        
+          Install to:                    V:/dev/opencv/build/install
+        -----------------------------------------------------------------
+        
+        Configuring done
+        Generating done
+        ```
+
+        接著按下Generate，CMake就會開始產生Visual Studio 2019的專案了。
+
+  11.  以系統管理員權限來開啟VS2019，打開在build資料夾底下的`OpenCV.sln`檔案，將專案切換為Release x64模式。只需要再VS2019上方的工具列選擇即可。
+  12.  建置方式很簡單，在上方的建置>建置>INSTALL，如下圖：
+        ![opencv_installation3.png](PNG/opencv_installation3.png)
+       完成後，如果VS2019上面沒有顯示錯誤就是成功了。
+  13.  一旦成功，就可進入`build\python_loader`底下來建立wheel檔案，提供給Python虛擬環境來用了。可以透過如下指令來建立：
+        ```bash
+        cd V:\dev\opencv\build\python_loader
+        python -m pip wheel .
+        ```
+       執行後，會在`build\python_loader`底下建立`numpy-x.xx.x-cpxx-cpxx-win_amd64.whl`和`opencv-4.6.0-py3-none-any.whl`這兩個wheel檔案，這能直接安裝
+       ```bash
+       # 啟用python虛擬環境
+       python -m pip install numpy-1.23.5-cp39-cp39-win_amd64.whl 
+       python -m pip install opencv-4.6.0-py3-none-any.whl
+       ```
+  14.  經過測試，發現Python3.8以後都會遇到DLL載入[問題](https://github.com/opencv/opencv/issues/17632)，因為Python在Windows上對DLL的載入機制變的更嚴格了，可以參考[Python DOC](https://docs.python.org/3.8/whatsnew/3.8.html#ctypes)；我們需要先透過`os.add_all_dll_directory()`來新增dll資料夾，但這需要修改程式中每一個呼叫`import cv2`的地方，並不是很方便，所幸OpenCV Python Binding有提供應對方案，**那就是修改`lib\site-packages\cv2\__init__.py`中位於第89行的變數`BINARIES_PATHS`**，這裡我們可以加入Gstreamer的bin資料夾，範例中位於`V:\CppLibrary\gstreamer\1.0\msvc_x86_64\bin`：
+        ```python
+        89     BINARIES_PATHS = [r'V:\CppLibrary\gstreamer\1.0\msvc_x86_64\bin']
+        ```
+        > **WARM:** 如此一來，只要在此虛擬環境或Python環境的可以直接使用OpenCV了，但每一個建立的虛擬環境都需要重新設定一次。
+
+</details>
 #### 3.準備需要的文件
 + 模型的權重
   > 預設的worker/worker3_conf.yaml使用的權重可以直接從這裡來下載。

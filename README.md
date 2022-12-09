@@ -72,6 +72,7 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
         ![opencv_installation0.png](PNG/opencv_installation0.png)
   8. 填入後按下上圖藍色的「Configure」，選擇Visual Studio 16 2019並按下Finsh，之後會開始自動檢測環境，等他跑完會產生如下圖中粉紅色框中的資訊：
         ![opencv_installation1.png](PNG/opencv_installation1.png)
+        
   我們需要確認Gstreamer是否被偵測到可以向上拉找到Video I/O的欄位，顯示YES代表偵測到Gstreamer了
         ```bash
         Video I/O:
@@ -89,6 +90,7 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
         ```
   9.  接下我們要調整`OPENCV_EXTRA_MODULES_PATH`的參數，我們可以透過如下圖中的黃色框來搜尋，並將我們解壓縮後的contrib資料夾底下的modules的位置填入，如下圖中的藍色框，示範使用的位置為`V:/dev/opencv/opencv_contrib-4.6.0/modules`。
         ![opencv_installation2.png](PNG/opencv_installation2.png)
+
   同樣的方法，我們將`EIGEN_INCLUDE_PATH`修改為剛剛解壓縮的eigen 3.4.0資料夾，示範使用的位置是`V:\CppLibrary\eigen-3.4.0`。
   最後將`BUILD_opencv_world`參數啟用，將`BUILD_SHARED_LIBS`參數關閉。
   10.  設定完成後再進行一次configuration，下面的是範例的輸出內容：
@@ -214,7 +216,6 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
         -----------------------------------------------------------------
         
         Configuring done
-        Generating done
         ```
 
         接著按下Generate，CMake就會開始產生Visual Studio 2019的專案了。
@@ -241,6 +242,7 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
         > **WARM:** 如此一來，只要在此虛擬環境或Python環境的可以直接使用OpenCV了，但每一個建立的虛擬環境都需要重新設定一次。
 
 </details>
+
 #### 3.準備需要的文件
 + 模型的權重
   > 預設的worker/worker3_conf.yaml使用的權重可以直接從這裡來下載。

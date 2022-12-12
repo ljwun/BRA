@@ -1,3 +1,4 @@
+import os
 import os.path as osp
 import sys
 import cv2
@@ -139,9 +140,9 @@ def make_ffmpeg_process(shape, fps, encoder, destination, log):
         '-y', '-an',
         '-f', 'rawvideo',
         '-vcodec','rawvideo',
-        '-pix_fmt', 'bgr24',
-        '-s', f'{shape[0]}x{shape[1]}',
-        '-r', f'{fps}',
+        '-pixel_format', 'bgr24',
+        '-video_size', f'{shape[0]}x{shape[1]}',
+        '-framerate', f'{fps}',
         '-i', '-'
     ]
     target = destination.split('://') 
@@ -226,7 +227,7 @@ class publisher_gst:
         self.opened = False
         self.pipe = deque()
         self.writer = None
-        self.gst_pattern = r"appsrc ! video/x-raw, format=BGR ! queue ! videoscale ! video/x-raw,width=960 ! videoconvert ! ximagesink sync=false"
+        self.gst_pattern = r"appsrc ! queue ! video/x-raw, format=BGR ! videoconvert ! autovideosink sync=false"
         self.null_frame = None
         self.thread_worker = Thread(target=self.run)
         self.sleep_duration = None
@@ -347,7 +348,8 @@ class segment_publisher_gst:
         self.opened = True
         self.pipe = deque()
         self.writer = None
-        self.gst_pattern = r"appsrc ! video/x-raw, format=BGR ! queue ! videoconvert ! video/x-raw,format=BGRx ! nvvidconv ! nvv4l2h264enc ! h264parse ! matroskamux ! filesink location=%s"
+        self.gst_pattern = r'appsrc ! video/x-raw, format=BGR ! queue ! videoconvert  %s filesink location=%s'
+        self.cvt_enc_mux_bin = "!"
         self.sleep_duration = 1
         self.thread_worker = Thread(target=self.run)
         self.thread_worker.start()
@@ -360,6 +362,10 @@ class segment_publisher_gst:
         }
     
     def start(self, shape, fps, encoder, destination, log):
+        if encoder[:2]=='nv':
+            self.cvt_enc_mux_bin = f'! nvvidconv ! encodebin profile="matroskamux:{encoder}" !'
+        else:
+            self.cvt_enc_mux_bin = f'! encodebin profile="matroskamux:{encoder}" !'
         self.sleep_duration = 1/(fps*1.5)
         self.args = {
             'shape':shape,
@@ -386,7 +392,8 @@ class segment_publisher_gst:
                     logger.info(f'stream writer to {self.args["destination"]} is end.')
                 elif isinstance(bfr, str):
                     self.args['destination'] = bfr
-                    self.writer = cv2.VideoWriter(self.gst_pattern % (bfr), cv2.CAP_GSTREAMER, 0, self.args['fps'], self.args['shape'])
+                    logger.info(f'Gstreamer Video Writer pattern is {self.gst_pattern % (self.cvt_enc_mux_bin, bfr)}.')
+                    self.writer = cv2.VideoWriter(self.gst_pattern % (self.cvt_enc_mux_bin, bfr), cv2.CAP_GSTREAMER, 0, self.args['fps'], self.args['shape'])
                     if not self.writer.isOpened():
                         logger.error(f'writer to {bfr} is not reachable.')
                     logger.info(f'writer to {bfr} is starting.')
@@ -409,7 +416,8 @@ class segment_publisher_gst:
                     logger.info(f'stream writer to {self.args["destination"]} is end.')
                 elif isinstance(bfr, str):
                     self.args['destination'] = bfr
-                    self.writer = cv2.VideoWriter(self.gst_pattern % (bfr), cv2.CAP_GSTREAMER, 0, self.args['fps'], self.args['shape'])
+                    logger.info(f'Gstreamer Video Writer pattern is {self.gst_pattern % (self.cvt_enc_mux_bin, bfr)}.')
+                    self.writer = cv2.VideoWriter(self.gst_pattern % (self.cvt_enc_mux_bin, bfr), cv2.CAP_GSTREAMER, 0, self.args['fps'], self.args['shape'])
                     if not self.writer.isOpened():
                         logger.exception(f'writer to {bfr} is not reachable.')
                     logger.info(f'writer to {bfr} is starting.')
@@ -537,6 +545,7 @@ def main():
                 datetime_tag = datetime.datetime.now().strftime(r'%Y%m%d_%H%M')
                 if args.video_output is not None:
                     vwriter_filename = f'{args.video_output}{datetime_tag}.mkv' if not args.legacy else args.video_output
+                    vwriter_filename = osp.abspath(vwriter_filename).replace(os.sep, '/')
                     video_writer.start(stored_size, worker.fps, args.output_encoder, vwriter_filename, vwriter_logFile)
                     logger.info(f'Decide the name of save video is : {vwriter_filename}')
                 if args.write_to_csv is not None:

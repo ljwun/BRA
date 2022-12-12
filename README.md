@@ -56,7 +56,51 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
 ```
 <details><summary>為OpenCV啟用Gstreamer（不使用GSTREAMER後端時可以跳過）</summary>
 
-  **Windows下:**
+  #### Jetson
+  > Jetson系列的開發版都能通過[Install OpenCV 4.5 on Jetson Nano](https://qengineering.eu/install-opencv-4.5-on-jetson-nano.html)的流程來安裝，其中最核心的文件是[OpenCV-4-5-5.sh](https://github.com/Qengineering/Install-OpenCV-Jetson-Nano/raw/main/OpenCV-4-5-5.sh)，也就是該作者些好的編譯腳本。
+  
+  因此，我們能直接將腳本下載下來，做部分修改就能執行了。
+  1. 下載腳本
+      ```bash
+      wget https://github.com/Qengineering/Install-OpenCV-Jetson-Nano/raw/main/OpenCV-4-5-5.sh
+      ```
+  2. 我們唯一要修改的東西是`CUDA_ARCH_BIN`參數，他需要根據GPU的架構來填寫，這時我們能夠借助NVIDIA提供的[網站](https://developer.nvidia.com/cuda-gpus#collapseOne)來查詢，Jetson系列可透過「CUDA-Enabled Jetson Products」來查詢，以下是顯示內容：
+      |GPU|Compute Capability|
+      |---|---|  
+      |Jetson AGX Orin, Jetson Orin NX, Jetson Orin Nano|8.7|
+      |Jetson AGX Xavier, Jetson Xavier NX|7.2|
+      |Jetson TX2|6.2|
+      |Jetson Nano|5.3|
+      換句話說，如果我們的板子是Jetson NX，我們需要將OpenCV-4-5-5.sh中的第58行
+      ```bash
+       58 -D CUDA_ARCH_BIN=5.3 \
+      ```
+      改成
+      ```bash
+       58 -D CUDA_ARCH_BIN=7.2 \
+      ```
+  3. 修改完成後就能直接執行編譯了
+      ```bash
+      sudo chmod 755 ./OpenCV-4-5-5.sh
+      ./OpenCV-4-5-5.sh
+      ```
+      確認編譯過程中沒有錯誤就能接著進行下一步了。
+  4. 雖然說編譯完後會安裝到某個指定位置的Python裡，但在之後若需要安裝到其他虛擬環境下，雖然可以透過和根環境共享已經安裝的模組，但還是預先打包成wheel會比較方便：
+      ```bash
+      cd ~/opencv/build/python_loader
+      python -m pip wheel .
+      ```
+
+  5. 執行指令後會生成兩個.whl的檔案，分別是numpy的和OpenCV的，可以透過以下指令來安裝到虛擬環境：
+      ```bash
+      source $MY_VENV/bin/activate
+      python -m pip install numpy*.whl
+      python -m pip install opencv*.whl
+      ```
+
+  6. 最後，啟動Python，並寫入`import cv2`來測試，如果安裝正確甚麼都不會返回。
+
+  **Windows:**
   > **WARM:** OpenCV 4.5.5在Windows上編譯Gstreamer功能會出現[問題](https://github.com/opencv/opencv/issues/21393)，目前建議使用4.6.0來編譯。
 
   > **TIPS:** 除了以下寫出的需要下載和安裝的軟體，在編譯過程我們還會使用到[Visual Studio 2019 with C++](https://my.visualstudio.com/Downloads?q=visual%20studio%202019&wt.mc_id=o~msft~vscom~older-downloads)、[FFmpeg](https://www.gyan.dev/ffmpeg/builds/)(請記得將bin/資料夾加到環境變數Path裡)、[CMake](https://cmake.org/download/)，請自行安裝。

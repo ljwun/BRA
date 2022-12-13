@@ -426,6 +426,46 @@ class segment_publisher_gst:
                     cv2.waitKey(1)
             time.sleep(self.sleep_duration)
 
+class monitor_display:
+    def __init__(self):
+        self.opened = False
+        self.pipe = deque()
+        self.sleep_duration = 1
+        self.thread_worker = Thread(target=self.run)
+        self.sleep_duration = 0
+
+    def start(self, shape, fps, encoder, destination, log, null_frame):
+        self.sleep_duration = 1/(fps*1.5)
+        self.null_frame = null_frame
+        self.opened = True
+        self.thread_worker.start()
+        logger.info(f'[monitor_display] is starting.')
+
+    def shutdown(self):
+        logger.debug(f'===========Thread [monitor_display] shutdown===========')
+        self.opened = False
+        if self.thread_worker.is_alive():
+            self.thread_worker.join()
+        logger.debug(f'thread status? alive={self.thread_worker.is_alive()}')
+        for _ in range(len(self.pipe)):
+            self.pipe.popleft()
+        cv2.destroyWindow("BRA display")
+        logger.debug(f'remain frames : {len(self.pipe)}')
+        logger.debug(f'=======================================================')
+
+    def run(self):
+        bfr = None
+        while self.opened:
+            if len(self.pipe) > 0:
+                bfr = self.pipe[0]
+                self.pipe.popleft()
+                cv2.namedWindow("BRA display", cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_EXPANDED)
+                cv2.imshow("BRA display", bfr)
+                cv2.waitKey(1)
+                time.sleep(self.sleep_duration)
+            else:
+                time.sleep(0.05)
+
 @logger.catch
 def main():
     args = make_parser().parse_args()
@@ -486,7 +526,9 @@ def main():
     stream_publisher = None
     if args.stream_output is not None:
         stream_logFile = open(args.stream_log, 'w')
-        if args.io_backend == "FFMPEG" or args.io_backend == "MIXGF" :
+        if args.stream_output[:7]=="MONITOR":
+            stream_publisher = monitor_display()
+        elif args.io_backend == "FFMPEG" or args.io_backend == "MIXGF" :
             stream_publisher = publisher_ffmpeg()
         else:
             stream_publisher = publisher_gst()

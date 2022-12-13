@@ -71,6 +71,7 @@ python -m pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-inde
       |Jetson AGX Xavier, Jetson Xavier NX|7.2|
       |Jetson TX2|6.2|
       |Jetson Nano|5.3|
+      
       換句話說，如果我們的板子是Jetson NX，我們需要將OpenCV-4-5-5.sh中的第58行
       ```bash
        58 -D CUDA_ARCH_BIN=5.3 \
@@ -420,7 +421,7 @@ ARGS的選項有很多，我們可以類型來分類，其中「*」代表必填
 |||--io_backend|FFMPEG、GSTREAMER|輸入和輸出所要使用的後端|
 ||-h|--help||列出所有參數|
 
-最簡單的範例
+##### 最簡單的範例
 ```bash
 # 記得啟動python的虛擬環境
 cd work
@@ -463,6 +464,8 @@ python ./work_dev.py -vin 輸入影像 -vout 輸出影像 -csv CSV檔案 -wc wor
 ```
 這次我們使用了h265的編碼方式，同樣使用NVIDIA的GPU上的硬體加速來進行編碼。
 
+> **WARN:** `-en`參數所指定的編碼器是FFMPEG和GSTREAMER共用的參數，只會被使用於輸出，換句話說，我們只能選擇`--io_backend`所指定的後端類型所提供的編碼器，舉例來說FFmpeg中的`libx264`相對於Gstreamer的`x264enc`編碼器。
+
 可以發現上面所有的例子都有一個參數`--legacy`，這代表系統只會處理一次輸入，當輸入源錯誤的話則會報錯；相反的，若取消`--legacy`參數，系統將會持續嘗試訪問輸入源，不僅如此，當輸入源從可以訪問到不能訪問，系統仍會持續等待，這種模式能搭配串流輸入源來使用，一旦接收到輸入源便會開始處理，一旦接收不到輸入源便會儲存這一輪的處理資料，並等待下一輪的輸入
 ```bash
 # 記得啟動python的虛擬環境
@@ -471,3 +474,25 @@ python ./work_dev.py -vin rtmp://server_ip:1935/channel -vout 輸出影像前綴
 ```
 這個例子中，我們移除了`--legacy`參數，輸入源改成rtmp的串流源，程式會以輪詢的方式向多媒體伺服器請求。
 > **WARN:** `-vout`和`-csv`參數的意義在非legacy模式中已經變成前綴，在處理完一輪後，系統會以這個前綴加上日期時間以及副檔名來儲存資料。
+
+##### 特殊輸入
+在之前的範例我們不是使用本地的影像資源，就是拉取網路上的串流來運算，但其實支援的輸入類型不只如此，我們還支援了攝影機的影像，或是一條包含影像處理行為的pipeline，這才是我們使用Gstreamer的主要原因。
+
+當我們需要使用攝影機時，我可以直接修改`--video_input`參數為一個像機讀取的pipeline：
+```bash
+# GUN/Linux下讀取USB攝影機
+python ./work_dev.py -vin "v4l2src device=/dev/video0 ! video/x-raw, width=1920, height=1080 ! videoconvert ! appsink" --io_backend GSTREAMER ...
+
+# Windows下讀取USB攝影機
+python ./work_dev.py -vin "ksvideosrc device-index=0 ! video/x-raw, width=1920, height=1080 ! videoconvert ! appsink" --io_backend GSTREAMER ...
+
+# Jetson上讀取CSI MIPI攝影機
+python ./work_dev.py -vin "nvarguscamerasrc sensor_id=0 ! video/x-raw(memory:NVMM), width=3264, height=2464, format=NV12, framerate=21/1 ! nvvidconv ! videoconvert ! appsink" --io_backend GSTREAMER ...
+```
+
+三個環境中讀取攝影機的方法其實各個都是一條pipeline description，因此，我們當然能進行而外的影像處理，舉例來說，如果我們攝影機的像素太低，我們可以直接將pipeline改成：
+```bash
+# GUN/Linux下讀取USB攝影機
+python ./work_dev.py -vin "v4l2src device=/dev/video0 ! video/x-raw, width=640, height=480 ! videoscale ! video/x-raw,width=1920 ! videoconvert ! appsink" --io_backend GSTREAMER ...
+```
+pipeline相較之前，這次我們使用640寬480高的攝影機，由於太小，我們取出後按比例將寬放大到1920，最後才會輸入程式。

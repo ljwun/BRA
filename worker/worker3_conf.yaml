@@ -1,13 +1,13 @@
 mask:
   pipe_enable: True
   device: 'cuda:0'
-  exp: '/BRA/exps/FaceMask_m.py'
-  checkpoint: '/BRA/pretrain/FMD_m1k.pth'
+  exp: './exps/FaceMask_m.py'
+  checkpoint: './/pretrain/FMD_m1k.pth'
   fp16: True
   fuse: True
   legacy: False
   trt_mode: True
-  trt_path: /BRA/pretrain/trt/FaceMask_m_trt.pth
+  trt_path: ./pretrain/trt/FaceMask_m_trt.pth
   trt_batch: 16
   trt_workspace: 32
 
@@ -21,19 +21,19 @@ track_opt: &pt
 
 reid_opt: &ptreid
   device: 'cuda:0'
-  cfg: '/BRA/third_party/fast-reid/configs/MSMT17/sbs_S50.yml'
-  checkpoint: '/BRA/pretrain/msmt_sbs_S50.pth'
+  cfg: './third_party/fast-reid/configs/MSMT17/sbs_S50.yml'
+  checkpoint: './pretrain/msmt_sbs_S50.pth'
 
 person:
   pipe_enable: True
   device: 'cuda:0'
-  exp: '/BRA/third_party/ByteTrack/exps/example/mot/yolox_m_mix_det.py'
-  checkpoint: '/BRA/pretrain/bytetrack_m_mot17.pth.tar'
+  exp: './third_party/ByteTrack/exps/example/mot/yolox_m_mix_det.py'
+  checkpoint: './pretrain/bytetrack_m_mot17.pth.tar'
   fp16: True
   fuse: True
   legacy: True
   trt_mode: True
-  trt_path: /BRA/pretrain/trt/bytetrack_m_mot17_trt.pth
+  trt_path: ./pretrain/trt/bytetrack_m_mot17_trt.pth
   trt_batch: 16
   trt_workspace: 32
   track_opt: *pt

@@ -21,7 +21,7 @@ if need
 ## Usage Step
 #### 1.下載
 ```bash
-git clone --recurse-submodules https://github.com/YyuK-Liao/BRA
+git clone --recurse-submodules https://github.com/ljwun/BRA
 ```
 #### 2.準備Python所需環境
 ```bash

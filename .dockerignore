@@ -1,0 +1,36 @@
+# venv
+.dev-env/
+
+# cache
+__pycache__/
+YOLOX_outputs/
+
+# temp
+tmp/
+
+# link file
+*.dll
+
+# large file
+pretrain/*
+dataset/*
+
+# private file (maybe unready)
+test/*
+*.ps1
+test_*
+*.log
+
+# documentation
+**/*.md
+PNG/*
+requirements.txt
+
+# git
+.git/
+.gitignore
+.gitmodules
+
+# docker
+Dockerfile
+.dockerignore
